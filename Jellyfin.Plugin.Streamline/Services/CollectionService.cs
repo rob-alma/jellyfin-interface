@@ -90,6 +90,8 @@ public sealed class CollectionService
             Studios: ["DC", "DC Studios", "DC Films", "DC Entertainment", "DC Comics"],
             Titles: ["peacemaker", "creature commandos", "the penguin", "gotham", "titans", "doom patrol", "harley quinn", "smallville", "watchmen", "the sandman", "superman & lois", "arrow", "the flash", "supergirl", "dc's legends of tomorrow", "batwoman", "black lightning", "stargirl", "joker", "joker: folie a deux"]),
         new("pixar", "Pixar", ["pixar"], StudioContains: ["pixar"]),
+        new("books", "Book Adaptations", ["book", "books", "novel", "novels", "based on a book", "boek", "boeken", "roman", "verfilming"],
+            Tags: ["based on novel or book", "based on novel", "based on young adult novel", "based on book", "based on short story", "based on children's book", "based on play or musical"]),
         new("musicals", "Musicals", ["musical", "musicals", "sing along"], Tags: ["musical", "musical film", "broadway", "jukebox musical", "song and dance"]),
         new("best-picture", "Best Picture Winners", ["oscar", "oscars", "academy award", "best picture"], TitleYears: BestPictureWinners, MoviesOnly: true),
         new("award-shows", "Award-winning Shows", ["emmy", "emmys", "award", "awards", "award winning"], Titles: EmmyWinningShows, SeriesOnly: true, ShowsOnly: true),
@@ -289,6 +291,7 @@ public sealed class CollectionService
         var directors = new List<CollectionInfo>();
         var series = new List<CollectionInfo>();
         var absorbed = new HashSet<string>(StringComparer.Ordinal);
+        var claimed = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         Func<BaseItem, ISet<string>> people = item => item is Movie ? CreditsOf(item).People : new HashSet<string>();
 
@@ -328,6 +331,7 @@ public sealed class CollectionService
             }
 
             universes.Add(Info("universe-" + universe.Id, universe.Name, "universe", universe.Aliases, members));
+            claimed.UnionWith(members.Select(item => item.Id));
         }
 
         // Decades.
@@ -382,20 +386,49 @@ public sealed class CollectionService
         {
             var movies = group.Select(entry => (BaseItem)entry.Movie).ToList();
             var name = group.Select(entry => entry.Movie.TmdbCollectionName).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-            if (movies.Count < MinTmdbItems || name is null || !names.Add(Normalize(CleanCollectionName(name))))
+            if (name is null)
             {
                 continue;
             }
 
-            series.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "collection", TmdbAliases.GetValueOrDefault(group.Key) ?? [], movies));
+            // Spin-off shows make it a franchise by themselves: a show named after the series or
+            // one of its movies and then more ("Jurassic World: Camp Cretaceous", or without the
+            // colon, next to the movie "Jurassic World"). Without a colon the name has to be at
+            // least two words, so a one-word title like "Alien" doesn't catch "Alien Worlds".
+            // Shows a built-in franchise already has are left alone, so "Avatar: The Last
+            // Airbender" doesn't join James Cameron's Avatar.
+            var stems = movies.Select(movie => movie.Name).Append(CleanCollectionName(name))
+                .Select(stem => stem.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            bool IsSpinOff(BaseItem show) => stems.Any(stem =>
+                show.Name.StartsWith(stem + ":", StringComparison.OrdinalIgnoreCase)
+                || (Normalize(stem).Contains(' ', StringComparison.Ordinal) && Normalize(show.Name).StartsWith(Normalize(stem) + " ", StringComparison.Ordinal)));
+            var spinOffs = items.Where(item => item is MediaBrowser.Controller.Entities.TV.Series && !claimed.Contains(item.Id) && IsSpinOff(item)).ToList();
+            var franchise = spinOffs.Count > 0 && movies.Count >= MinUniverseItems;
+            if ((!franchise && movies.Count < MinTmdbItems) || !names.Add(Normalize(CleanCollectionName(name))))
+            {
+                continue;
+            }
+
+            var aliases = TmdbAliases.GetValueOrDefault(group.Key) ?? [];
+            if (franchise)
+            {
+                claimed.UnionWith(spinOffs.Select(item => item.Id));
+                universes.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "universe", aliases, movies.Concat(spinOffs).ToList()));
+            }
+            else
+            {
+                series.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "collection", aliases, movies));
+            }
         }
 
         static IEnumerable<CollectionInfo> Biggest(List<CollectionInfo> list) => list
             .OrderByDescending(collection => collection.ItemIds.Count)
             .ThenBy(collection => collection.Name, StringComparer.OrdinalIgnoreCase);
 
-        // Featured keep their curated order; the rest go biggest first.
-        return featured.Concat(Biggest(universes)).Concat(decades).Concat(Biggest(directors)).Concat(Biggest(series)).ToList();
+        // Featured keep their curated order; then franchises, movie series, decades, directors.
+        return featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(Biggest(directors)).ToList();
     }
 
     private sealed record Credits(DateTime At, string[] Directors, ISet<string> People);

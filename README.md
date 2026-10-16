@@ -95,18 +95,22 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
   polls Seerr's request list (every 10 minutes and right after new titles arrive) and matches the
   requester by their linked Jellyfin account (Jellyseerr) or user name. Each request is added once
   (removing it afterwards sticks), including requests made before Seerr was connected.
-- **Collections** (top bar and phone tab bar), in four sections:
-  1. **Featured**: Disney, Marvel (MCU and X-Men), DC (Batman, Superman and the rest), Pixar, Musicals,
-     Best Picture Winners, Studio Ghibli, DreamWorks Animation, Christmas, Halloween, A24, Stephen King,
-     Award-winning Shows (Emmy winners), Video Game Adaptations, Under 90 Minutes, matched by studio, keyword, writer or title; each from 3
-     titles. Admins add their own under *Extra collections* (`Name = Title; Title`); those come first.
-  2. **Franchises** across movies and shows (MCU, X-Men, Star Wars, Batman, Superman, Breaking Bad, Game
-     of Thrones, Middle-earth, Wizarding World, The Walking Dead and more): 2 titles when a show is in
-     it, otherwise 3 movies.
-  3. **Directors** with 4 or more movies on the server.
+- **Collections** (top bar and phone tab bar), in this order:
+  1. **Featured**: Disney, Marvel (MCU and X-Men), DC (Batman, Superman and the rest), Pixar, Book
+     Adaptations, Musicals, Best Picture Winners, Award-winning Shows (Emmy winners), Studio Ghibli,
+     DreamWorks Animation, Christmas, Halloween, A24, Stephen King, Video Game Adaptations, Under 90
+     Minutes; each from 3 titles. Admins add their own under *Extra collections* (`Name = Title;
+     Title`); those come first.
+  2. **Franchises** across movies and shows: a built-in list (MCU, X-Men, Star Wars, Batman,
+     Superman, Breaking Bad, Game of Thrones, Middle-earth, Wizarding World, The Walking Dead and
+     more), 2 titles when a show is in it, otherwise 3 movies. Any TMDb movie series with 2 or more
+     movies here also becomes a franchise by itself when a spin-off show is on the server: a show
+     named after one of its movies ("Jurassic World: Camp Cretaceous", with or without the colon;
+     without it the movie's name must be two words or more).
+  3. **Movie series**: every other TMDb movie collection with at least 3 movies here (James Bond,
+     Jurassic Park...), found automatically, plus collections made in Jellyfin.
   4. **Decades**: Classics (before 1980), 80s, 90s, 00s, 10s, 20s.
-  5. **Movie series** from TMDb with at least 3 movies here (James Bond...), and collections made in
-     Jellyfin.
+  5. **Directors** with 4 or more movies on the server.
   Each opens a page in release order. Only titles the user can see count. Search finds them by name
   or alias ("007", "dc"), by a title in them ("Skyfall" finds James Bond), or by genre ("superhero"
   finds Marvel and DC).
@@ -115,15 +119,15 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
 - **Search** lists people first, then collections, genres and titles. It forgives a typo or two
   (in titles when the normal search finds little), and understands Dutch genre and collection words
   ("oorlogsfilms", "romantische komedie", "jaren 80").
-- **Menus**: Jellyfin's side menu is only for admins and only has Dashboard and Metadata Manager
+- **Menus**: Jellyfin's side menu is only for admins and only has Home, Dashboard and Metadata Manager (the dashboard's own menu gets a Home item too)
   (Movies and Shows are in the top bar). The person icon opens Settings and Sign out for everyone.
 - **Search** also matches genres and sub-genres by name or keyword ("musical", "superhero",
   "anime"), showing their tile and titles; "war movies" / "history shows" narrow to one type.
-- **Coming Soon**: personal part, new episodes of shows you watch (played in the last half year, on your Watch
-  List or favorited) airing within the month, only when their season started recently (a new show
-  or a new season, not a long-running one), plus, the same for everyone, titles requested in Seerr that are on their way
-  (out already and downloading, or out within the month). Air dates come from Seerr (TMDb), since
-  Jellyfin only knows episodes once they're downloaded; without Seerr the row is skipped.
+- **Coming Soon**: only what's about to air: new episodes of shows you watch (played in the last
+  half year, on your Watch List or favorited) airing within the month, only when their season started
+  recently (a new show or a new season, not a long-running one). Requests aren't listed (they go on
+  the requester's Watch List). Air dates come from Seerr (TMDb), since Jellyfin only knows episodes
+  once they're downloaded; without Seerr the row is skipped. Shows only, so not on the Movies page.
 - **Search**: a big search field, genre shortcuts, results as posters (and matching people), and
   what's popular here before you type.
 - **Phones**: a tab bar at the bottom (Home, Movies, Shows, Watch List, Favorites).
@@ -192,7 +196,7 @@ load, no restart needed.
 | Accent color | `#aa5cc3` (Jellyfin light purple) |
 | Hero banner on / feature titles from the last ... days / number / seconds each | on / 30 / 6 / 9 |
 | Tags: New Series and New Episodes / New Release (days); New on Jellyfin covers (days) | 30 / 60; 15 |
-| Phone preview button (for testing on a desktop) | off |
+| Phone preview and User view buttons (for testing on a desktop; User view is admins only) | off |
 | Genre rows | `Action, Drama, Crime, Fantasy, Adventure, Romance, Comedy` |
 | Titles per row | 20 |
 

@@ -1197,9 +1197,11 @@
             if (!state.config.HasSeerr) {
                 return [];
             }
-            const kinds = scope.types === "Movie" ? ["requested-movie"] : scope.types === "Series" ? ["episode", "season", "show", "requested-show"] : null;
-            const items = ((await getJson("Streamline/ComingSoon").catch(() => [])) || [])
-                .filter((entry) => !kinds || kinds.includes(entry.Kind));
+            // Only episodes about to air, so nothing for the Movies page.
+            if (scope.types === "Movie") {
+                return [];
+            }
+            const items = (await getJson("Streamline/ComingSoon").catch(() => [])) || [];
             return [{ key: "coming", title: "Coming Soon", items, layout: "landscape", cardBuilder: buildComingCard }];
         },
 
@@ -2796,9 +2798,9 @@
                 const sections = [
                     { kind: "featured", title: "Featured", headline: true },
                     { kind: "universe", title: "Franchises", headline: true },
+                    { kind: "collection", title: "Movie series", headline: false },
                     { kind: "decade", title: "Decades", headline: false },
-                    { kind: "director", title: "Directors", headline: false },
-                    { kind: "collection", title: "Movie series", headline: false }
+                    { kind: "director", title: "Directors", headline: false }
                 ].map((section) => Object.assign(section, { tiles: tiles.filter((tile) => tile.kind === section.kind) }));
                 body.replaceChildren(...sections.filter((section) => section.tiles.length).map((section) => {
                     const list = section.tiles;
@@ -2896,6 +2898,7 @@
         politie: "cops and detectives", moord: "whodunits", moordmysterie: "whodunits", opgroeien: "coming of age", tiener: "coming of age",
         tieners: "coming of age", bovennatuurlijk: "supernatural", spook: "supernatural", spoken: "supernatural", dystopisch: "dystopian",
         misdaaddrama: "crime dramas", misdaadthriller: "crime thrillers", feelgood: "feel good", klassieker: "classics", klassiekers: "classics",
+        boek: "book", boeken: "book", verfilming: "book", verfilmingen: "book", roman: "book", romans: "book",
         tachtig: "80s", negentig: "90s", prijswinnend: "award", prijswinnende: "award", bekroond: "award", bekroonde: "award", videogame: "video game",
         game: "video game", games: "video game", kort: "short", korte: "short", regisseur: "director",
         // Kinds, kept as a last word so "oorlogsfilms" means war movies.
@@ -3654,12 +3657,86 @@
 
     // Whether the signed-in user is an admin: only admins keep the side menu (with just the
     // Dashboard and the Metadata Manager in it).
+    // "User view" (testing): an admin sees the menus the way a regular user does. Kept for
+    // the browser tab (and the phone preview inside it), until switched back.
+    const VIEW_AS_USER_KEY = "streamline-view-as-user";
+
+    function viewingAsUser() {
+        try {
+            return window.sessionStorage.getItem(VIEW_AS_USER_KEY) === "1";
+        } catch {
+            return false;
+        }
+    }
+
     function syncAdmin() {
         cached("me", STABLE_ROW_TTL_MS, () => ApiClient.getCurrentUser())
             .then((user) => {
-                document.documentElement.classList.toggle("sl-admin", !!(user && user.Policy && user.Policy.IsAdministrator));
+                state.isAdmin = !!(user && user.Policy && user.Policy.IsAdministrator);
+                document.documentElement.classList.toggle("sl-admin", state.isAdmin && !viewingAsUser());
+                document.documentElement.classList.toggle("sl-viewing-as-user", state.isAdmin && viewingAsUser());
+                ensureUserViewButton();
+                ensureDashboardHome();
             })
             .catch(() => { /* keep whatever it was */ });
+    }
+
+    function ensureUserViewButton() {
+        const onDashboard = document.body.classList.contains("dashboardDocument");
+        const wanted = state.isAdmin && state.config && state.config.ShowPhonePreview && !IN_PHONE_PREVIEW && window.top === window && !onDashboard;
+        const existing = document.querySelector(".sl-userview-toggle");
+        if (!wanted) {
+            if (existing) {
+                existing.remove();
+            }
+            return;
+        }
+        const label = viewingAsUser() ? "Back to admin view" : "User view";
+        if (existing && existing.dataset.label === label) {
+            return;
+        }
+        const button = existing || el("button", "sl-phone-toggle sl-userview-toggle");
+        button.type = "button";
+        button.dataset.label = label;
+        button.replaceChildren(icon(viewingAsUser() ? "admin_panel_settings" : "person_outline"), el("span", null, label));
+        if (!existing) {
+            button.addEventListener("click", () => {
+                try {
+                    if (viewingAsUser()) {
+                        window.sessionStorage.removeItem(VIEW_AS_USER_KEY);
+                    } else {
+                        window.sessionStorage.setItem(VIEW_AS_USER_KEY, "1");
+                    }
+                } catch {
+                    return;
+                }
+                syncAdmin();
+                // An open phone preview follows along.
+                const frame = document.querySelector(".sl-phone-screen");
+                if (frame && frame.contentWindow) {
+                    frame.contentWindow.location.reload();
+                }
+            });
+            document.body.appendChild(button);
+        }
+    }
+
+    // The dashboard's own side menu has no plain way back; a Home item at its top.
+    function ensureDashboardHome() {
+        if (!document.body.classList.contains("dashboardDocument")) {
+            return;
+        }
+        // The dashboard's own menu, not Jellyfin's (hidden) side menu, which has the same link.
+        const first = Array.from(document.querySelectorAll('a[href="#/dashboard"]')).find((link) => !link.closest(".mainDrawer"));
+        const list = first && first.closest(".MuiList-root, ul, nav");
+        if (!list || list.querySelector(".sl-dash-home")) {
+            return;
+        }
+        const home = el("a", "sl-dash-home");
+        home.href = "#/home";
+        home.appendChild(icon("home"));
+        home.appendChild(el("span", null, "Home"));
+        list.insertBefore(home, list.firstChild);
     }
 
     function closeUserMenu() {
@@ -3733,6 +3810,7 @@
                     ensureTabBar();
                     ensurePhonePreviewButton();
                     syncAdmin();
+                    ensureDashboardHome();
                     updateNav();
                     enhanceDetails();
                     // The video player shares the header; it keeps its own back button.
@@ -3924,7 +4002,7 @@
             const preview = state.preview;
             for (const mutation of mutations) {
                 const target = mutation.target;
-                if ((target.closest && target.closest(".sl-root, .sl-detail-extra, .sl-tabbar, .sl-phone-preview, .sl-phone-toggle, .sl-usermenu")) || (preview && preview.contains(target))) {
+                if ((target.closest && target.closest(".sl-root, .sl-detail-extra, .sl-tabbar, .sl-phone-preview, .sl-phone-toggle, .sl-usermenu, .sl-dash-home")) || (preview && preview.contains(target))) {
                     continue;
                 }
                 scheduleCheck();

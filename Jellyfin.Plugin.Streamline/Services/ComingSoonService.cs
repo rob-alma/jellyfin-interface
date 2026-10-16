@@ -20,8 +20,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Streamline.Services;
 
 /// <summary>
-/// What's coming in the next month, for the "Coming Soon" row: new episodes of shows the user
-/// watches, and titles requested in Seerr that are on their way. Only new things: a show counts
+/// What's about to air in the next month, for the "Coming Soon" row: new episodes of shows the
+/// user watches (requests aren't shown; they land on the Watch List instead). Only new things: a show counts
 /// when the season the next episode belongs to started recently (a new show or a new season),
 /// not a long-running show that keeps going. Air dates come from Seerr (which gets them from
 /// TMDb): Jellyfin only knows episodes once they're downloaded.
@@ -81,15 +81,13 @@ public sealed class ComingSoonService
         try
         {
             items.AddRange(await NewEpisodesAsync(user, cancellationToken).ConfigureAwait(false));
-            var seen = items.Where(item => item.TmdbId is not null).Select(item => item.TmdbId).ToHashSet();
-            items.AddRange((await RequestedAsync(cancellationToken).ConfigureAwait(false)).Where(item => !seen.Contains(item.TmdbId)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Building Coming Soon failed.");
         }
 
-        // On its way (already out, downloading) first, then by date.
+        // Soonest first.
         var list = items
             .OrderBy(item => item.Date is null ? DateTime.MinValue : DateTime.Parse(item.Date, CultureInfo.InvariantCulture))
             .ToList();
@@ -184,80 +182,6 @@ public sealed class ComingSoonService
         return result;
     }
 
-    // Requests that are approved but not (fully) in the library yet, if they're out already
-    // (downloading) or come out within the month.
-    private async Task<List<ComingSoonItem>> RequestedAsync(CancellationToken cancellationToken)
-    {
-        var result = new List<ComingSoonItem>();
-        using var json = await GetJsonAsync("api/v1/request?take=100&skip=0&filter=all&sort=added", cancellationToken).ConfigureAwait(false);
-        if (json is null || !json.RootElement.TryGetProperty("results", out var requests))
-        {
-            return result;
-        }
-
-        var today = DateTime.UtcNow.Date;
-        foreach (var request in requests.EnumerateArray())
-        {
-            // Approved requests, for media Seerr has as pending, processing or partly there.
-            var status = request.TryGetProperty("status", out var statusValue) && statusValue.ValueKind == JsonValueKind.Number ? statusValue.GetInt32() : 0;
-            if (status != 2 || !request.TryGetProperty("media", out var media))
-            {
-                continue;
-            }
-
-            var mediaStatus = media.TryGetProperty("status", out var mediaStatusValue) && mediaStatusValue.ValueKind == JsonValueKind.Number ? mediaStatusValue.GetInt32() : 0;
-            var tmdb = media.TryGetProperty("tmdbId", out var tmdbValue) && tmdbValue.ValueKind == JsonValueKind.Number ? tmdbValue.GetInt32().ToString(CultureInfo.InvariantCulture) : null;
-            var type = media.TryGetProperty("mediaType", out var typeValue) ? typeValue.GetString() : null;
-            if (mediaStatus is < 2 or > 4 || tmdb is null || type is not ("movie" or "tv"))
-            {
-                continue;
-            }
-
-            if (await DetailsAsync(type, tmdb, cancellationToken).ConfigureAwait(false) is not { } details)
-            {
-                continue;
-            }
-
-            // When it's out: a movie's release date; a show's premiere, or for a show that's
-            // already running, its next episode if that's within the month.
-            var released = type == "movie" ? Date(details, "releaseDate") : Date(details, "firstAirDate");
-            if (type == "tv" && released < today
-                && details.TryGetProperty("nextEpisodeToAir", out var next) && next.ValueKind == JsonValueKind.Object
-                && Date(next, "airDate") is { } nextAir && nextAir >= today && nextAir <= today.AddDays(DaysAhead))
-            {
-                released = nextAir;
-            }
-
-            if (released is not null && released > today.AddDays(DaysAhead))
-            {
-                continue;
-            }
-
-            var inLibrary = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = [type == "tv" ? BaseItemKind.Series : BaseItemKind.Movie],
-                Recursive = true,
-                HasAnyProviderId = new Dictionary<string, string> { [MetadataProvider.Tmdb.ToString()] = tmdb }
-            }).FirstOrDefault();
-
-            result.Add(new ComingSoonItem
-            {
-                Kind = type == "tv" ? "requested-show" : "requested-movie",
-                Title = (type == "movie" ? Text(details, "title") : Text(details, "name")) ?? string.Empty,
-                // Never who asked for it: everyone sees this part of the row.
-                Subtitle = type == "tv" ? "Requested show" : "Requested movie",
-                // Out already: it's downloading ("on its way"), so no date to count down to.
-                Date = released is not null && released > today ? released.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
-                ItemId = inLibrary?.Id.ToString("N"),
-                TmdbId = (type == "tv" ? "tv:" : "movie:") + tmdb,
-                Backdrop = Text(details, "backdropPath"),
-                Poster = Text(details, "posterPath")
-            });
-        }
-
-        return result;
-    }
-
     private static DateTime? SeasonStart(JsonElement tv, int seasonNumber)
     {
         if (!tv.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array)
@@ -325,13 +249,13 @@ public sealed class ComingSoonService
 /// </summary>
 public sealed class ComingSoonItem
 {
-    /// <summary>Gets or sets what it is: episode, season, show, requested-movie, requested-show.</summary>
+    /// <summary>Gets or sets what it is: episode, season or show.</summary>
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the title.</summary>
     public string Title { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the line under it (the episode, or "Requested movie" / "Requested show").</summary>
+    /// <summary>Gets or sets the line under it (the episode).</summary>
     public string Subtitle { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the date it airs/comes out (yyyy-MM-dd), or null when it's on its way now.</summary>

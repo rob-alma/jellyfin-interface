@@ -2212,7 +2212,7 @@ html.sl-nav-on:not(.sl-admin) body:not(.dashboardDocument) .mainDrawerHandle {
     display: none !important;
 }
 
-html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .navMenuOption:not(.lnkManageServer):not(.editorViewMenu),
+html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .navMenuOption:not(.lnkManageServer):not(.editorViewMenu):not([href="#/home"]),
 html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader {
     display: none !important;
 }
@@ -2261,4 +2261,36 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 .sl-usermenu-item .material-icons {
     font-size: 1.25rem;
     color: var(--sl-text-dim);
+}
+
+/* "User view" sits just above "Phone view". */
+.sl-userview-toggle {
+    bottom: 62px;
+}
+
+html.sl-viewing-as-user .sl-userview-toggle {
+    border-color: var(--sl-accent);
+}
+
+/* ---- Dashboard: Home at the top of its side menu -------------------------------------------- */
+
+.sl-dash-home {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 8px 16px;
+    color: inherit;
+    text-decoration: none;
+    font-size: 1rem;
+}
+
+.sl-dash-home:hover,
+.sl-dash-home:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
+.sl-dash-home .material-icons {
+    font-size: 1.5rem;
+    opacity: 0.85;
 }
