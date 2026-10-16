@@ -96,10 +96,23 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool ShowPhonePreview { get; set; }
 
     /// <summary>
+    /// Gets or sets the account the admin's "User view" button signs in as (a test account),
+    /// so the admin sees exactly what that user sees: their lists, favorites and menus.
+    /// </summary>
+    public string UserViewUserId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets extra collections for the Collections page, one per line:
     /// "Name = Title; Title; Title". For franchises the built-in list doesn't know.
     /// </summary>
     public string CustomCollections { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether collections made in Jellyfin itself (boxsets) also
+    /// show on the Collections page. Off: the page is built only from Streamline's own rules,
+    /// from everything in the library.
+    /// </summary>
+    public bool IncludeJellyfinCollections { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether newly added movies and shows that are still

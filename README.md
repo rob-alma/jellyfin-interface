@@ -111,7 +111,11 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
      Jurassic Park...), found automatically, plus collections made in Jellyfin.
   4. **Decades**: Classics (before 1980), 80s, 90s, 00s, 10s, 20s.
   5. **Directors** with 4 or more movies on the server.
-  Each opens a page in release order. Only titles the user can see count. Search finds them by name
+  Collections made in Jellyfin itself are left out unless *Also show collections made in Jellyfin*
+  is on. Everything is worked out from the whole library, not only new arrivals: once on the first
+  start after installing, then nightly (*Prepare collections*, 5:00), saved to the plugin's data
+  folder; during the day new titles are worked in at most every 30 minutes. Each opens a page in
+  release order. Only titles the user can see count. Search finds them by name
   or alias ("007", "dc"), by a title in them ("Skyfall" finds James Bond), or by genre ("superhero"
   finds Marvel and DC).
 - Home has a **Collections** row, and item pages show what a title is **part of** (franchise, movie
@@ -196,13 +200,29 @@ load, no restart needed.
 | Accent color | `#aa5cc3` (Jellyfin light purple) |
 | Hero banner on / feature titles from the last ... days / number / seconds each | on / 30 / 6 / 9 |
 | Tags: New Series and New Episodes / New Release (days); New on Jellyfin covers (days) | 30 / 60; 15 |
-| Phone preview and User view buttons (for testing on a desktop; User view is admins only) | off |
+| Phone preview and User view buttons (for testing on a desktop; User view is admins only, signs in as the chosen test account via Quick Connect) | off / none |
 | Genre rows | `Action, Drama, Crime, Fantasy, Adventure, Romance, Comedy` |
 | Titles per row | 20 |
 
 Ratings come from Jellyfin's metadata: the community rating (TMDb, or IMDb when the built-in OMDb
 provider is enabled for the library) and the critic rating (Rotten Tomatoes, OMDb only). Titles
 without ratings count as average.
+
+## Performance on a big library
+
+The heavy work runs at night (default times, changeable under Dashboard > Scheduled Tasks):
+
+| Time | Task | What |
+| --- | --- | --- |
+| 3:00 | Refresh personal recommendations (Personal Recommendations) | scoring every user's taste profile; also on server start |
+| 4:00 | Fill in missing genres and trailers | metadata gaps and trailers for recent titles |
+| 4:30 | Fix wrong titles and posters | at most 40 lookups a night |
+| 5:00 | Prepare collections | every collection, and every movie's directors and writers |
+
+During the day: a page asks for a prepared, saved list (milliseconds); new titles join collections
+within half an hour; new titles get their metadata/trailer/title checks 15 minutes after arriving
+(only those titles); rating something refreshes only that user's recommendations. Search's typo
+list is the titles' names only, loaded once and kept for a while.
 
 ## Building
 

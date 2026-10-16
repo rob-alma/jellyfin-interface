@@ -100,6 +100,14 @@
                         <div class="fieldDescription">Comma separated, in order; shown first and larger. Sub-genres and every other genre follow.</div>
                     </div>
 
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="IncludeJellyfinCollections" data-field="IncludeJellyfinCollections" type="checkbox" is="emby-checkbox" />
+                            <span>Also show collections made in Jellyfin</span>
+                        </label>
+                        <div class="fieldDescription">Off: the Collections page is built only from Streamline's own rules, worked out from everything already in the library (prepared at night, and on the first start after installing). On: Jellyfin's own collections (boxsets) are added too.</div>
+                    </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="CustomCollections">Extra collections</label>
                         <textarea id="CustomCollections" data-field="CustomCollections" is="emby-textarea" class="emby-textarea" rows="4" placeholder="Pixar Favorites = Toy Story; Up; Coco; Inside Out"></textarea>
@@ -195,6 +203,14 @@
                         <div class="fieldDescription">Adds a small button at the bottom left that opens the current page in a phone-sized frame, laid out the way a phone gets it, so the phone layout can be checked from a computer. Visible to everyone while on; meant for testing.</div>
                     </div>
 
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="UserViewUserId">User view: test account</label>
+                        <select id="UserViewUserId" data-field="UserViewUserId" is="emby-select">
+                            <option value="">None</option>
+                        </select>
+                        <div class="fieldDescription">With the phone preview button on, admins also get a User view button: it opens the site signed in as this account (its own Watch List, Favorites, ratings and menus), in a frame on top of the page, without signing you out. Uses Jellyfin's Quick Connect (Dashboard &gt; General), which has to be on. Pick a test account, not someone's real one: you'd see their lists.</div>
+                    </div>
+
 
                     <div class="selectContainer">
                         <label class="selectLabel" for="FrontendInjectionMethod">Frontend injection method</label>
@@ -228,7 +244,17 @@
             document.querySelector('#StreamlineConfigPage')
                 .addEventListener('pageshow', function () {
                     Dashboard.showLoadingMsg();
-                    ApiClient.getPluginConfiguration(StreamlineConfig.pluginUniqueId).then(function (config) {
+                    // The test-account list has to be there before the saved choice is filled in.
+                    var select = document.querySelector('#UserViewUserId');
+                    Promise.all([ApiClient.getPluginConfiguration(StreamlineConfig.pluginUniqueId), ApiClient.getUsers().catch(function () { return []; })]).then(function (results) {
+                        var config = results[0];
+                        select.querySelectorAll('option:not([value=""])').forEach(function (option) { option.remove(); });
+                        results[1].forEach(function (user) {
+                            var option = document.createElement('option');
+                            option.value = user.Id.replace(/-/g, '');
+                            option.textContent = user.Name + (user.Policy && user.Policy.IsAdministrator ? ' (admin)' : '');
+                            select.appendChild(option);
+                        });
                         document.querySelectorAll('#StreamlineConfigForm [data-field]').forEach(function (field) {
                             var value = config[field.dataset.field];
                             if (field.type === 'checkbox') {

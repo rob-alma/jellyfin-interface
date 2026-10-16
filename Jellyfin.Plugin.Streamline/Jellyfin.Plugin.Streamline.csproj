@@ -29,6 +29,7 @@
     <None Remove="Web\**" />
     <EmbeddedResource Include="Web\home.js" />
     <EmbeddedResource Include="Web\home.css" />
+    <EmbeddedResource Include="Web\early.js" />
   </ItemGroup>
 
 </Project>

@@ -29,7 +29,10 @@ public static partial class ScriptMarkup
     /// <param name="extraAttribute">An extra marker attribute distinguishing how it was inserted.</param>
     public static string Build(string basePath, string extraAttribute)
     {
-        return $"<script {extraAttribute} plugin=\"{PluginMarker}\" defer=\"defer\" src=\"{ScriptUrl(basePath)}\"></script>";
+        // Two tags: a tiny one that runs right away, before Jellyfin's own (deferred) code, for
+        // the admin's User view; then the real script, deferred like Jellyfin's.
+        return $"<script {extraAttribute} plugin=\"{PluginMarker}\" src=\"{basePath}/Streamline/early?v={ScriptRuntime.ScriptVersion}\"></script>"
+            + $"<script {extraAttribute} plugin=\"{PluginMarker}\" defer=\"defer\" src=\"{ScriptUrl(basePath)}\"></script>";
     }
 
     /// <summary>

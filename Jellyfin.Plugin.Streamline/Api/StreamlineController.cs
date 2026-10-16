@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data;
 using Jellyfin.Plugin.Streamline.Services;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
@@ -21,6 +22,7 @@ namespace Jellyfin.Plugin.Streamline.Api;
 public sealed class StreamlineController : ControllerBase
 {
     private const string ResourcePrefix = "Jellyfin.Plugin.Streamline.Web.";
+    private const int MaxListedIds = 200;
 
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
@@ -82,6 +84,16 @@ public sealed class StreamlineController : ControllerBase
     public ActionResult GetScript() => ServeResource("home.js", "application/javascript");
 
     /// <summary>
+    /// Gets the small script that runs before Jellyfin's own code (for the admin's User view).
+    /// Not <c>[Authorize]</c>, for the same reason as the script.
+    /// </summary>
+    [HttpGet("early")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [Produces("application/javascript")]
+    public ActionResult GetEarlyScript() => ServeResource("early.js", "application/javascript");
+
+    /// <summary>
     /// Gets the client stylesheet. Not <c>[Authorize]</c>, for the same reason as the script.
     /// </summary>
     [HttpGet("style")]
@@ -116,8 +128,24 @@ public sealed class StreamlineController : ControllerBase
             config.HeadlineGenres,
             config.TrailersEnabled,
             RowItemLimit = Math.Clamp(config.RowItemLimit, 6, 50),
-            HasSeerr = !string.IsNullOrWhiteSpace(config.SeerrUrl) && !string.IsNullOrWhiteSpace(config.SeerrApiKey)
+            HasSeerr = !string.IsNullOrWhiteSpace(config.SeerrUrl) && !string.IsNullOrWhiteSpace(config.SeerrApiKey),
+            // Only admins get the User view's test user (and only while the test buttons are on).
+            UserView = UserViewTarget()
         });
+    }
+
+    private object? UserViewTarget()
+    {
+        var config = Plugin.Instance!.Configuration;
+        var user = CurrentUser();
+        if (!config.ShowPhonePreview || user is null || !user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator)
+            || !Guid.TryParse(config.UserViewUserId, out var testId) || testId == user.Id)
+        {
+            return null;
+        }
+
+        var test = _userManager.GetUserById(testId);
+        return test is null ? null : new { Id = test.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), Name = test.Username };
     }
 
     /// <summary>
@@ -240,7 +268,57 @@ public sealed class StreamlineController : ControllerBase
     public ActionResult<IReadOnlyList<CollectionInfo>> GetCollections()
     {
         var user = CurrentUser();
-        return user is null ? Unauthorized() : Ok(_collections.Get(user));
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        // Big ones (decades, Under 90 Minutes) come with their first titles only; the page asks
+        // for the rest when it's opened, so this list stays small however big the library is.
+        return Ok(_collections.Get(user).Select(collection => collection.ItemIds.Count <= MaxListedIds ? collection : new CollectionInfo
+        {
+            Id = collection.Id,
+            Name = collection.Name,
+            Kind = collection.Kind,
+            Aliases = collection.Aliases,
+            Movies = collection.Movies,
+            Shows = collection.Shows,
+            Count = collection.ItemIds.Count,
+            Partial = true,
+            ItemIds = collection.ItemIds.Take(12).ToList()
+        }).ToList());
+    }
+
+    /// <summary>
+    /// Gets every title of one collection, in release order.
+    /// </summary>
+    /// <param name="id">The collection.</param>
+    [HttpGet("Collections/{id}")]
+    [Authorize]
+    public ActionResult<CollectionInfo> GetCollection([FromRoute] string id)
+    {
+        var user = CurrentUser();
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        var collection = _collections.Get(user).FirstOrDefault(entry => entry.Id == id);
+        return collection is null ? NotFound() : Ok(collection);
+    }
+
+    /// <summary>
+    /// Gets the collections a title is part of (for "Part of" on its page).
+    /// </summary>
+    /// <param name="itemId">The movie or show.</param>
+    [HttpGet("Collections/Of/{itemId}")]
+    [Authorize]
+    public ActionResult<IEnumerable<object>> GetCollectionsOf([FromRoute] Guid itemId)
+    {
+        var user = CurrentUser();
+        return user is null
+            ? Unauthorized()
+            : Ok(_collections.Get(user).Where(entry => entry.ItemIds.Contains(itemId)).Select(entry => new { entry.Id, entry.Name, entry.Kind }).ToList());
     }
 
     /// <summary>

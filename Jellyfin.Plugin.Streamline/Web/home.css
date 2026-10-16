@@ -2268,8 +2268,50 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     bottom: 62px;
 }
 
-html.sl-viewing-as-user .sl-userview-toggle {
-    border-color: var(--sl-accent);
+/* ---- User view: the site as the test account, over the page --------------------------------- */
+
+.sl-userview {
+    position: fixed;
+    z-index: 1990;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+}
+
+.sl-userview-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 6px 16px;
+    background: var(--sl-accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.sl-userview-bar .material-icons {
+    font-size: 1.1rem;
+}
+
+.sl-userview-frame {
+    flex: 1;
+    width: 100%;
+    border: 0;
+}
+
+.sl-userview-note {
+    position: fixed;
+    z-index: 2003;
+    left: 16px;
+    bottom: 110px;
+    max-width: 360px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #2a2a2a;
+    color: #fff;
+    font-size: 0.85rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 /* ---- Dashboard: Home at the top of its side menu -------------------------------------------- */

@@ -337,10 +337,20 @@
     const isBroadCollection = (collection) => collection.Kind === "decade" || collection.Id === "featured-short";
     const collectionHref = (collection) => browseHref(HOME_SCOPE, { sl: "collection", id: collection.Id });
 
+    // A big collection's list only has its first titles; the rest come when it's opened.
+    async function collectionIds(collection) {
+        if (!collection.Partial) {
+            return collection.ItemIds;
+        }
+        const full = await cached(`collection:${collection.Id}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Collections/${encodeURIComponent(collection.Id)}`));
+        return normalizeIds((full && full.ItemIds) || []);
+    }
+
     async function collectionMembers(collection) {
+        const ids = await collectionIds(collection);
         const items = [];
-        for (let i = 0; i < collection.ItemIds.length; i += 50) {
-            items.push(...await itemsByIds(collection.ItemIds.slice(i, i + 50)));
+        for (let i = 0; i < ids.length; i += 50) {
+            items.push(...await itemsByIds(ids.slice(i, i + 50)));
         }
         return items;
     }
@@ -360,7 +370,7 @@
             const fresh = withPoster.filter((item) => !used.has(item.Id));
             const items = fresh.concat(withPoster.filter((item) => used.has(item.Id))).slice(0, 4);
             items.forEach((item) => used.add(item.Id));
-            return { name: collection.Name, href: collectionHref(collection), kind: collection.Kind, total: collection.ItemIds.length, items };
+            return { name: collection.Name, href: collectionHref(collection), kind: collection.Kind, total: collection.Count || collection.ItemIds.length, items };
         });
     }
 
@@ -1444,6 +1454,12 @@
     }
 
     async function subTileData(scope, def) {
+        // Keyword-only sub-genres: the count and a few posters straight from the server, instead
+        // of fetching every title just to count them.
+        if (def.tags && !def.genres) {
+            const result = await pagedQuery(scope, { Tags: def.tags.join("|"), SortBy: "CommunityRating", SortOrder: "Descending", ImageTypes: "Primary" }, 0, 8);
+            return { name: def.name, href: browseHref(scope, { sl: "sub", sub: def.name }), items: tilePosters(result.items), total: result.total };
+        }
         const items = await subgenreItems(scope, def, 500);
         return { name: def.name, href: browseHref(scope, { sl: "sub", sub: def.name }), items: tilePosters(byRating(items)), total: items.length };
     }
@@ -2332,7 +2348,10 @@
                     navigate("/home");
                 }
             }),
-            ...views.slice(0, 5).map((view) => link(view.Id, view.Name, () => showDetails(view))),
+            // The libraries, but not Jellyfin's own Collections (our Collections replaces it),
+            // playlists or Live TV.
+            ...views.filter((view) => !["boxsets", "playlists", "livetv"].includes(view.CollectionType)).slice(0, 5)
+                .map((view) => link(view.Id, view.Name, () => showDetails(view))),
             link("mylist", "Watch List", () => navigate(browseHref(HOME_SCOPE, { sl: "mylist" }))),
             link("favorites", "Favorites", () => navigate(browseHref(HOME_SCOPE, { sl: "favorites", IsFavorite: "true" }))),
             link("collections", "Collections", () => navigate(collectionsHref()))
@@ -2954,7 +2973,8 @@
     // Every title, for the typo pass when the normal search finds (almost) nothing.
     function loadTitleIndex() {
         return cached("title-index", STABLE_ROW_TTL_MS, async () => {
-            const result = await getJson("Items", { UserId: userId(), Recursive: true, IncludeItemTypes: "Movie,Series", EnableImageTypes: "", Limit: 10000 });
+            // Names only: no images, user data or extra fields, so it stays small on a big library.
+            const result = await getJson("Items", { UserId: userId(), Recursive: true, IncludeItemTypes: "Movie,Series", Fields: "", EnableImages: false, EnableUserData: false, EnableTotalRecordCount: false, Limit: 20000 });
             return ((result && result.Items) || []).map((item) => ({ id: item.Id, words: searchWords(item.Name) }));
         });
     }
@@ -3169,7 +3189,7 @@
                 && ((["universe", "collection"].includes(collection.Kind) && collection.ItemIds.some((id) => found.has(id)))
                     // By genre ("superhero": Marvel, DC) only when nothing matched by name, so
                     // "marvel" doesn't bring in DC.
-                    || (!byNameFound && inGenre.size && collection.Id !== "featured-short" && collection.ItemIds.filter((id) => inGenre.has(id)).length * 2 >= collection.ItemIds.length)));
+                    || (!byNameFound && inGenre.size && !collection.Partial && collection.Id !== "featured-short" && collection.ItemIds.filter((id) => inGenre.has(id)).length * 2 >= collection.ItemIds.length)));
             const shownCollections = byName.concat(related).slice(0, 8);
             const members = (await Promise.all(byName.slice(0, 3).map(collectionMembers))).flat();
             if (token !== run) {
@@ -3623,14 +3643,14 @@
     // title is in (an episode or season: its show's). Not the broad ones like the decades.
     function addPartOf(page, item, id) {
         const titleId = normalizeIds([item.Type === "Movie" || item.Type === "Series" ? item.Id : item.SeriesId])[0];
-        loadCollections().then((collections) => {
+        cached(`partof:${titleId}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Collections/Of/${titleId}`)).then((collections) => {
             const slot = trailerSlot(page);
             if (!slot || !page.isConnected || hashParams().get("id") !== id || page.querySelector(`.sl-partof[data-item="${id}"]`)) {
                 return;
             }
             const order = { universe: 0, collection: 1, featured: 2, director: 3 };
-            const found = collections
-                .filter((collection) => !isBroadCollection(collection) && collection.ItemIds.includes(titleId))
+            const found = (collections || [])
+                .filter((collection) => !isBroadCollection(collection))
                 .sort((x, y) => order[x.Kind] - order[y.Kind])
                 .slice(0, 5);
             page.querySelectorAll(".sl-partof").forEach((node) => node.remove());
@@ -3657,68 +3677,145 @@
 
     // Whether the signed-in user is an admin: only admins keep the side menu (with just the
     // Dashboard and the Metadata Manager in it).
-    // "User view" (testing): an admin sees the menus the way a regular user does. Kept for
-    // the browser tab (and the phone preview inside it), until switched back.
-    const VIEW_AS_USER_KEY = "streamline-view-as-user";
-
-    function viewingAsUser() {
-        try {
-            return window.sessionStorage.getItem(VIEW_AS_USER_KEY) === "1";
-        } catch {
-            return false;
-        }
-    }
-
     function syncAdmin() {
         cached("me", STABLE_ROW_TTL_MS, () => ApiClient.getCurrentUser())
             .then((user) => {
                 state.isAdmin = !!(user && user.Policy && user.Policy.IsAdministrator);
-                document.documentElement.classList.toggle("sl-admin", state.isAdmin && !viewingAsUser());
-                document.documentElement.classList.toggle("sl-viewing-as-user", state.isAdmin && viewingAsUser());
+                document.documentElement.classList.toggle("sl-admin", state.isAdmin);
                 ensureUserViewButton();
                 ensureDashboardHome();
             })
             .catch(() => { /* keep whatever it was */ });
     }
 
+    // ---------------------------------------------------------------------------------------
+    // User view (testing, admins): the site signed in as the test account chosen in the
+    // settings, in a frame over the page, so the admin sees exactly what that user sees (their
+    // Watch List, Favorites, ratings, menus) without signing out. The sign-in comes from
+    // Jellyfin's Quick Connect, approved by the admin for that account; the frame keeps it in
+    // its own corner of the browser's storage (early.js), so the admin's session is untouched.
+    // ---------------------------------------------------------------------------------------
+
+    const IN_USER_VIEW = /[?&]slviewas=1(&|$)/.test(window.location.search);
+    const USER_VIEW_PREFIX = "streamline-viewas:";
+
     function ensureUserViewButton() {
         const onDashboard = document.body.classList.contains("dashboardDocument");
-        const wanted = state.isAdmin && state.config && state.config.ShowPhonePreview && !IN_PHONE_PREVIEW && window.top === window && !onDashboard;
+        const target = state.config && state.config.UserView;
+        const wanted = state.isAdmin && target && !IN_PHONE_PREVIEW && !IN_USER_VIEW && window.top === window && !onDashboard;
         const existing = document.querySelector(".sl-userview-toggle");
         if (!wanted) {
-            if (existing) {
+            if (existing && !state.userView) {
                 existing.remove();
             }
             return;
         }
-        const label = viewingAsUser() ? "Back to admin view" : "User view";
+        const label = state.userView ? "Back to your view" : `User view (${target.Name})`;
         if (existing && existing.dataset.label === label) {
             return;
         }
         const button = existing || el("button", "sl-phone-toggle sl-userview-toggle");
         button.type = "button";
         button.dataset.label = label;
-        button.replaceChildren(icon(viewingAsUser() ? "admin_panel_settings" : "person_outline"), el("span", null, label));
+        button.replaceChildren(icon(state.userView ? "admin_panel_settings" : "person_outline"), el("span", null, label));
         if (!existing) {
-            button.addEventListener("click", () => {
-                try {
-                    if (viewingAsUser()) {
-                        window.sessionStorage.removeItem(VIEW_AS_USER_KEY);
-                    } else {
-                        window.sessionStorage.setItem(VIEW_AS_USER_KEY, "1");
-                    }
-                } catch {
-                    return;
-                }
-                syncAdmin();
-                // An open phone preview follows along.
-                const frame = document.querySelector(".sl-phone-screen");
-                if (frame && frame.contentWindow) {
-                    frame.contentWindow.location.reload();
-                }
-            });
+            button.addEventListener("click", () => (state.userView ? closeUserView() : openUserView()));
             document.body.appendChild(button);
         }
+    }
+
+    function userViewNotice(text) {
+        const note = el("div", "sl-userview-note", text);
+        document.body.appendChild(note);
+        window.setTimeout(() => note.remove(), 6000);
+    }
+
+    async function openUserView() {
+        const target = state.config && state.config.UserView;
+        if (!target || state.userView) {
+            return;
+        }
+        const button = document.querySelector(".sl-userview-toggle");
+        button.disabled = true;
+        const deviceId = `streamline-userview-${Math.random().toString(36).slice(2, 10)}`;
+        const auth = (token) => `MediaBrowser Client="Streamline", Device="User view", DeviceId="${deviceId}", Version="${ApiClient.appVersion()}"${token ? `, Token="${token}"` : ""}`;
+        const post = async (path, body, token) => {
+            const response = await fetch(ApiClient.getUrl(path), {
+                method: "POST",
+                headers: { "Authorization": auth(token), "Content-Type": "application/json" },
+                body: body ? JSON.stringify(body) : undefined
+            });
+            if (!response.ok) {
+                throw new Error(`${path}: ${response.status}`);
+            }
+            const text = await response.text();
+            return text ? JSON.parse(text) : null;
+        };
+        try {
+            // Quick Connect: a code for this frame, approved by the admin for the test account.
+            const request = await post("QuickConnect/Initiate").catch(() => null);
+            if (!request) {
+                userViewNotice("User view needs Quick Connect: turn it on under Dashboard > General.");
+                return;
+            }
+            await ApiClient.ajax({ type: "POST", url: ApiClient.getUrl("QuickConnect/Authorize", { code: request.Code, userId: target.Id }) });
+            const session = await post("Users/AuthenticateWithQuickConnect", { Secret: request.Secret });
+
+            // The frame's own copy of the sign-in, the same as this page's but for that account.
+            const credentials = JSON.parse(window.localStorage.getItem("jellyfin_credentials") || "{\"Servers\":[]}");
+            const serverId = ApiClient.serverId();
+            const own = (credentials.Servers || []).find((server) => server.Id === serverId) || { Id: serverId, ManualAddress: ApiClient.serverAddress(), LastConnectionMode: 2 };
+            const servers = [Object.assign({}, own, { UserId: session.User.Id, AccessToken: session.AccessToken, DateLastAccessed: Date.now() })];
+            window.localStorage.setItem(`${USER_VIEW_PREFIX}jellyfin_credentials`, JSON.stringify(Object.assign({}, credentials, { Servers: servers })));
+            window.localStorage.setItem(`${USER_VIEW_PREFIX}_deviceId2`, deviceId);
+
+            const overlay = el("div", "sl-userview");
+            const bar = el("div", "sl-userview-bar");
+            bar.appendChild(icon("person_outline"));
+            bar.appendChild(el("span", null, `Viewing as ${session.User.Name}`));
+            overlay.appendChild(bar);
+            const frame = el("iframe", "sl-userview-frame");
+            frame.title = `Viewing as ${session.User.Name}`;
+            frame.src = `${window.location.pathname}?slviewas=1#/home`;
+            frame.addEventListener("load", () => {
+                // Without early.js running first (JavaScript Injector), the frame would just be
+                // the admin again: close it rather than pretend.
+                if (!frame.contentWindow || !frame.contentWindow.__streamlineUserView) {
+                    closeUserView();
+                    userViewNotice("User view needs the File Transformation plugin or direct injection (see the injection method setting).");
+                }
+            }, { once: true });
+            overlay.appendChild(frame);
+            document.body.appendChild(overlay);
+            state.userView = { overlay, token: session.AccessToken, post };
+        } catch (error) {
+            console.warn("[Streamline] User view failed.", error);
+            userViewNotice("Couldn't open the User view. Is the test account still there?");
+        } finally {
+            button.disabled = false;
+            ensureUserViewButton();
+        }
+    }
+
+    function closeUserView() {
+        const view = state.userView;
+        if (!view) {
+            return;
+        }
+        state.userView = null;
+        view.overlay.remove();
+        const phone = document.querySelector(".sl-phone-preview");
+        if (phone) {
+            togglePhonePreview();
+        }
+        // Sign the test account's frame out again and forget its storage.
+        view.post("Sessions/Logout", null, view.token).catch(() => { /* it expires with the device */ });
+        try {
+            Object.keys(window.localStorage).filter((key) => key.startsWith(USER_VIEW_PREFIX)).forEach((key) => window.localStorage.removeItem(key));
+        } catch {
+            /* nothing to tidy */
+        }
+        ensureUserViewButton();
     }
 
     // The dashboard's own side menu has no plain way back; a Home item at its top.
@@ -3976,7 +4073,8 @@
         const frame = el("div", "sl-phone-frame");
         const iframe = el("iframe", "sl-phone-screen");
         iframe.title = "Phone preview";
-        iframe.src = `${window.location.pathname}?slphone=1${window.location.hash}`;
+        // With the User view open, the phone shows that account too.
+        iframe.src = state.userView ? `${window.location.pathname}?slphone=1&slviewas=1#/home` : `${window.location.pathname}?slphone=1${window.location.hash}`;
         frame.appendChild(iframe);
         overlay.appendChild(frame);
         overlay.addEventListener("click", (event) => {

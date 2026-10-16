@@ -21,6 +21,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IdentityService>();
         serviceCollection.AddSingleton<ComingSoonService>();
         serviceCollection.AddSingleton<CollectionService>();
+        serviceCollection.AddSingleton<IScheduledTask, CollectionsTask>();
         serviceCollection.AddSingleton<SeerrService>();
         serviceCollection.AddHostedService(provider => provider.GetRequiredService<SeerrService>());
         serviceCollection.AddSingleton<IScheduledTask, IdentityTask>();

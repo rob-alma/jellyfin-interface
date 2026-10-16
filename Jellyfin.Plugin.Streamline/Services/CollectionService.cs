@@ -3,7 +3,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Controller.Dto;
@@ -11,6 +15,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Streamline.Services;
 
@@ -36,7 +41,6 @@ public sealed class CollectionService
     private const int MinTmdbItems = 3;
     private const int MinFeaturedItems = 3;
     private const int MinDirectorMovies = 4;
-    private static readonly TimeSpan PeopleLifetime = TimeSpan.FromHours(6);
 
     // Best Picture winners, as "title|year" (the film's year, not the ceremony's).
     private static readonly string[] BestPictureWinners =
@@ -151,34 +155,203 @@ public sealed class CollectionService
         ["10194"] = ["pixar"],
     };
 
+    // During the day, new titles are worked in at most this often (cheap: only their own
+    // credits are looked up). The full rebuild, with everyone's credits, is the nightly task.
+    private static readonly TimeSpan DaytimeRebuildGap = TimeSpan.FromMinutes(30);
+
+    private static readonly JsonSerializerOptions FileJson = new() { WriteIndented = false };
+
     private readonly ILibraryManager _libraryManager;
-    private readonly ConcurrentDictionary<Guid, (DateTime At, string Config, List<CollectionInfo> List)> _cache = new();
-    private readonly ConcurrentDictionary<Guid, Credits> _credits = new();
+    private readonly ILogger<CollectionService> _logger;
+    private readonly ConcurrentDictionary<Guid, (DateTime At, HashSet<Guid> Ids)> _visible = new();
+    private readonly SemaphoreSlim _buildLock = new(1, 1);
+    private ConcurrentDictionary<Guid, Credits> _credits = new();
+    private Snapshot? _snapshot;
+    private volatile bool _dirty;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CollectionService"/> class.
     /// </summary>
     /// <param name="libraryManager">Jellyfin's library manager.</param>
-    public CollectionService(ILibraryManager libraryManager)
+    /// <param name="logger">Logger.</param>
+    public CollectionService(ILibraryManager libraryManager, ILogger<CollectionService> logger)
     {
         _libraryManager = libraryManager;
+        _logger = logger;
+        _libraryManager.ItemAdded += OnLibraryChanged;
+        _libraryManager.ItemRemoved += OnLibraryChanged;
+        Load();
+
+        // First start after installing: prepare everything already in the library straight
+        // away (in the background, once the server is up), not on someone's first visit.
+        if (_snapshot is null)
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+                if (_snapshot is null)
+                {
+                    await RebuildAsync(false, CancellationToken.None).ConfigureAwait(false);
+                }
+            });
+        }
     }
 
+    private static string DataFolder => Plugin.Instance!.DataFolderPath;
+
     /// <summary>
-    /// Gets the collections a user can see: featured, franchises, directors, movie series.
+    /// Gets the collections a user can see: featured, franchises, movie series, decades,
+    /// directors. Served from the prepared (nightly) snapshot, cut down to what this user can
+    /// see; nothing is worked out per request.
     /// </summary>
     /// <param name="user">The user.</param>
     public IReadOnlyList<CollectionInfo> Get(User user)
     {
-        var custom = Plugin.Instance!.Configuration.CustomCollections ?? string.Empty;
-        if (_cache.TryGetValue(user.Id, out var cached) && cached.Config == custom && DateTime.UtcNow - cached.At < Lifetime)
+        var snapshot = Current();
+        var visible = VisibleIds(user);
+        var result = new List<CollectionInfo>();
+        foreach (var entry in snapshot.Collections)
         {
-            return cached.List;
+            var ids = entry.ItemIds.Where(visible.Contains).ToList();
+            if (ids.Count == 0 || ids.Count < entry.Min)
+            {
+                continue;
+            }
+
+            var movies = ids.Count(snapshot.MovieIds.Contains);
+            result.Add(new CollectionInfo
+            {
+                Id = entry.Id,
+                Name = entry.Name,
+                Kind = entry.Kind,
+                Aliases = entry.Aliases,
+                Movies = movies,
+                Shows = ids.Count - movies,
+                ItemIds = ids
+            });
         }
 
-        var list = Build(user, custom);
-        _cache[user.Id] = (DateTime.UtcNow, custom, list);
-        return list;
+        return result;
+    }
+
+    /// <summary>
+    /// Rebuilds the snapshot. The nightly task passes <paramref name="refreshCredits"/> to look
+    /// every movie's directors and writers up again; otherwise only new movies are looked up.
+    /// </summary>
+    /// <param name="refreshCredits">Whether to refresh everyone's credits.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task RebuildAsync(bool refreshCredits, CancellationToken cancellationToken)
+    {
+        await _buildLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (refreshCredits)
+            {
+                _credits = new ConcurrentDictionary<Guid, Credits>();
+            }
+
+            _dirty = false;
+            var custom = ConfigKey();
+            var started = DateTime.UtcNow;
+            var snapshot = Build(custom);
+            _snapshot = snapshot;
+            _visible.Clear();
+            Save(snapshot);
+            _logger.LogInformation("Prepared {Count} collections in {Seconds:0.0}s.", snapshot.Collections.Count, (DateTime.UtcNow - started).TotalSeconds);
+        }
+        finally
+        {
+            _buildLock.Release();
+        }
+    }
+
+    // The snapshot to serve. Built right away only when there is none yet (first start) or the
+    // admin changed their own collections; new titles are worked in in the background.
+    private Snapshot Current()
+    {
+        var custom = ConfigKey();
+        var snapshot = _snapshot;
+        if (snapshot is null || snapshot.Config != custom)
+        {
+            RebuildAsync(false, CancellationToken.None).GetAwaiter().GetResult();
+            return _snapshot!;
+        }
+
+        if (_dirty && DateTime.UtcNow - snapshot.BuiltAt > DaytimeRebuildGap && _buildLock.CurrentCount > 0)
+        {
+            _ = Task.Run(() => RebuildAsync(false, CancellationToken.None));
+        }
+
+        return snapshot;
+    }
+
+    // The settings the collections depend on; a change rebuilds them straight away.
+    private static string ConfigKey()
+    {
+        var config = Plugin.Instance!.Configuration;
+        return (config.IncludeJellyfinCollections ? "boxsets\n" : string.Empty) + (config.CustomCollections ?? string.Empty);
+    }
+
+    // What the user may see, as ids: one cheap id-only query per user every few minutes.
+    private HashSet<Guid> VisibleIds(User user)
+    {
+        if (_visible.TryGetValue(user.Id, out var known) && DateTime.UtcNow - known.At < Lifetime)
+        {
+            return known.Ids;
+        }
+
+        var ids = _libraryManager.GetItemIds(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
+            Recursive = true
+        }).ToHashSet();
+        _visible[user.Id] = (DateTime.UtcNow, ids);
+        return ids;
+    }
+
+    private void OnLibraryChanged(object? sender, ItemChangeEventArgs e)
+    {
+        if (e.Item is Movie or MediaBrowser.Controller.Entities.TV.Series or BoxSet)
+        {
+            _dirty = true;
+        }
+    }
+
+    private void Load()
+    {
+        try
+        {
+            var path = Path.Combine(DataFolder, "collections.json");
+            if (File.Exists(path))
+            {
+                _snapshot = JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(path), FileJson);
+            }
+
+            var creditsPath = Path.Combine(DataFolder, "credits.json");
+            if (File.Exists(creditsPath))
+            {
+                var saved = JsonSerializer.Deserialize<Dictionary<Guid, Credits>>(File.ReadAllText(creditsPath), FileJson);
+                _credits = new ConcurrentDictionary<Guid, Credits>(saved ?? []);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Couldn't read the saved collections; they'll be prepared again.");
+        }
+    }
+
+    private void Save(Snapshot snapshot)
+    {
+        try
+        {
+            Directory.CreateDirectory(DataFolder);
+            File.WriteAllText(Path.Combine(DataFolder, "collections.json"), JsonSerializer.Serialize(snapshot, FileJson));
+            File.WriteAllText(Path.Combine(DataFolder, "credits.json"), JsonSerializer.Serialize(_credits, FileJson));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Couldn't save the prepared collections.");
+        }
     }
 
     /// <summary>
@@ -248,37 +421,38 @@ public sealed class CollectionService
         .ToList();
 
     // Directors and writers of a movie, kept library-wide (they're the same for everyone) and
-    // looked up once per movie every few hours, so building a user's list stays cheap.
+    // saved, so a movie's credits are only looked up once (and again at night).
     private Credits CreditsOf(BaseItem item)
     {
-        if (_credits.TryGetValue(item.Id, out var known) && DateTime.UtcNow - known.At < PeopleLifetime)
+        if (_credits.TryGetValue(item.Id, out var known))
         {
             return known;
         }
 
         var people = _libraryManager.GetPeople(item);
         var credits = new Credits(
-            DateTime.UtcNow,
             people.Where(person => person.Type == PersonKind.Director).Select(person => person.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            people.Where(person => person.Type is PersonKind.Writer or PersonKind.Director).Select(person => person.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            people.Where(person => person.Type is PersonKind.Writer or PersonKind.Director).Select(person => person.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
         _credits[item.Id] = credits;
         return credits;
     }
 
-    private CollectionInfo Info(string id, string name, string kind, IReadOnlyList<string> aliases, List<BaseItem> members) => new()
+    // A collection in the snapshot: everything in it library-wide, and how many of those a user
+    // must be able to see for it to show for them.
+    private static SnapshotEntry Info(string id, string name, string kind, IReadOnlyList<string> aliases, List<BaseItem> members, int min) => new()
     {
         Id = id,
         Name = name,
         Kind = kind,
         Aliases = aliases,
-        Movies = members.Count(item => item is Movie),
-        Shows = members.Count(item => item is not Movie),
+        Min = min,
         ItemIds = InOrder(members)
     };
 
-    private List<CollectionInfo> Build(User user, string custom)
+    private Snapshot Build(string configKey)
     {
-        var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        var custom = Plugin.Instance!.Configuration.CustomCollections ?? string.Empty;
+        var items = _libraryManager.GetItemList(new InternalItemsQuery
         {
             IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
             Recursive = true,
@@ -286,14 +460,14 @@ public sealed class CollectionService
             DtoOptions = new DtoOptions(false) { Fields = [MediaBrowser.Model.Querying.ItemFields.ProviderIds, MediaBrowser.Model.Querying.ItemFields.Tags, MediaBrowser.Model.Querying.ItemFields.Studios, MediaBrowser.Model.Querying.ItemFields.OriginalTitle] }
         });
 
-        var featured = new List<CollectionInfo>();
-        var universes = new List<CollectionInfo>();
-        var directors = new List<CollectionInfo>();
-        var series = new List<CollectionInfo>();
+        var featured = new List<SnapshotEntry>();
+        var universes = new List<SnapshotEntry>();
+        var directors = new List<SnapshotEntry>();
+        var series = new List<SnapshotEntry>();
         var absorbed = new HashSet<string>(StringComparer.Ordinal);
         var claimed = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.Ordinal);
-        Func<BaseItem, ISet<string>> people = item => item is Movie ? CreditsOf(item).People : new HashSet<string>();
+        Func<BaseItem, ISet<string>> people = item => item is Movie ? CreditsOf(item).People.ToHashSet(StringComparer.OrdinalIgnoreCase) : new HashSet<string>();
 
         // Featured: the admin's own first (and they win over a built-in one with the same name).
         foreach (var (theme, own) in ParseCustom(custom).Select(theme => (theme, true)).Concat(Featured.Select(theme => (theme, false))))
@@ -306,7 +480,7 @@ public sealed class CollectionService
             var members = items.Where(item => theme.Matches(item, people)).ToList();
             if (members.Count >= (own ? 1 : MinFeaturedItems))
             {
-                featured.Add(Info((own ? "custom-" : "featured-") + theme.Id, theme.Name, "featured", theme.Aliases, members));
+                featured.Add(Info((own ? "custom-" : "featured-") + theme.Id, theme.Name, "featured", theme.Aliases, members, own ? 1 : MinFeaturedItems));
             }
         }
 
@@ -320,7 +494,8 @@ public sealed class CollectionService
             }
 
             var members = items.Where(item => universe.Matches(item, people)).ToList();
-            if (members.Count < (members.All(item => item is Movie) ? MinTmdbItems : MinUniverseItems))
+            var min = members.All(item => item is Movie) ? MinTmdbItems : MinUniverseItems;
+            if (members.Count < min)
             {
                 continue;
             }
@@ -330,18 +505,18 @@ public sealed class CollectionService
                 absorbed.Add(id);
             }
 
-            universes.Add(Info("universe-" + universe.Id, universe.Name, "universe", universe.Aliases, members));
+            universes.Add(Info("universe-" + universe.Id, universe.Name, "universe", universe.Aliases, members, min));
             claimed.UnionWith(members.Select(item => item.Id));
         }
 
         // Decades.
-        var decades = new List<CollectionInfo>();
+        var decades = new List<SnapshotEntry>();
         foreach (var decade in Decades)
         {
             var members = items.Where(item => decade.Matches(item, people)).ToList();
             if (members.Count >= MinFeaturedItems && names.Add(Normalize(decade.Name)))
             {
-                decades.Add(Info("decade-" + decade.Id, decade.Name, "decade", decade.Aliases, members));
+                decades.Add(Info("decade-" + decade.Id, decade.Name, "decade", decade.Aliases, members, MinFeaturedItems));
             }
         }
 
@@ -351,19 +526,23 @@ public sealed class CollectionService
             .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() >= MinDirectorMovies))
         {
-            directors.Add(Info("director-" + Normalize(group.Key).Replace(' ', '-'), group.Key, "director", [], group.Select(entry => entry.Movie).ToList()));
+            directors.Add(Info("director-" + Normalize(group.Key).Replace(' ', '-'), group.Key, "director", [], group.Select(entry => entry.Movie).ToList(), MinDirectorMovies));
         }
 
-        // Collections made in Jellyfin (by hand, or by its "add movies to collections" option).
+        // Collections made in Jellyfin (by hand, or by its "add movies to collections" option):
+        // only when the admin wants them; by default the page is Streamline's own.
         var boxSetTmdb = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var boxSet in _libraryManager.GetItemList(new InternalItemsQuery(user)
+        var boxSets = Plugin.Instance!.Configuration.IncludeJellyfinCollections
+            ? _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = [BaseItemKind.BoxSet],
+                Recursive = true,
+                DtoOptions = new DtoOptions(false)
+            }).OfType<BoxSet>()
+            : [];
+        foreach (var boxSet in boxSets)
         {
-            IncludeItemTypes = [BaseItemKind.BoxSet],
-            Recursive = true,
-            DtoOptions = new DtoOptions(false)
-        }).OfType<BoxSet>())
-        {
-            var members = boxSet.GetLinkedChildren().Where(child => child is Movie or MediaBrowser.Controller.Entities.TV.Series && child.IsVisible(user)).ToList();
+            var members = boxSet.GetLinkedChildren().Where(child => child is Movie or MediaBrowser.Controller.Entities.TV.Series).ToList();
             var tmdb = boxSet.GetProviderId(MetadataProvider.Tmdb);
             if (members.Count == 0 || (tmdb is not null && absorbed.Contains(tmdb)) || !names.Add(Normalize(CleanCollectionName(boxSet.Name))))
             {
@@ -375,7 +554,7 @@ public sealed class CollectionService
                 boxSetTmdb.Add(tmdb);
             }
 
-            series.Add(Info("boxset-" + boxSet.Id.ToString("N", CultureInfo.InvariantCulture), CleanCollectionName(boxSet.Name), "collection", [], members));
+            series.Add(Info("boxset-" + boxSet.Id.ToString("N", CultureInfo.InvariantCulture), CleanCollectionName(boxSet.Name), "collection", [], members, 1));
         }
 
         // Movie series from TMDb.
@@ -415,23 +594,66 @@ public sealed class CollectionService
             if (franchise)
             {
                 claimed.UnionWith(spinOffs.Select(item => item.Id));
-                universes.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "universe", aliases, movies.Concat(spinOffs).ToList()));
+                universes.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "universe", aliases, movies.Concat(spinOffs).ToList(), MinUniverseItems));
             }
             else
             {
-                series.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "collection", aliases, movies));
+                series.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "collection", aliases, movies, MinTmdbItems));
             }
         }
 
-        static IEnumerable<CollectionInfo> Biggest(List<CollectionInfo> list) => list
+        static IEnumerable<SnapshotEntry> Biggest(List<SnapshotEntry> list) => list
             .OrderByDescending(collection => collection.ItemIds.Count)
             .ThenBy(collection => collection.Name, StringComparer.OrdinalIgnoreCase);
 
         // Featured keep their curated order; then franchises, movie series, decades, directors.
-        return featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(Biggest(directors)).ToList();
+        return new Snapshot
+        {
+            BuiltAt = DateTime.UtcNow,
+            Config = configKey,
+            MovieIds = items.OfType<Movie>().Select(item => item.Id).ToHashSet(),
+            Collections = featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(Biggest(directors)).ToList()
+        };
     }
 
-    private sealed record Credits(DateTime At, string[] Directors, ISet<string> People);
+    /// <summary>
+    /// A movie's directors, and its directors and writers.
+    /// </summary>
+    /// <param name="Directors">Directors.</param>
+    /// <param name="People">Directors and writers.</param>
+    internal sealed record Credits(string[] Directors, string[] People);
+
+    /// <summary>
+    /// Every collection library-wide, as prepared at night (saved to disk).
+    /// </summary>
+    internal sealed class Snapshot
+    {
+        public DateTime BuiltAt { get; set; }
+
+        public string Config { get; set; } = string.Empty;
+
+        public HashSet<Guid> MovieIds { get; set; } = [];
+
+        public List<SnapshotEntry> Collections { get; set; } = [];
+    }
+
+    /// <summary>
+    /// One collection in the snapshot.
+    /// </summary>
+    internal sealed class SnapshotEntry
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public string Name { get; set; } = string.Empty;
+
+        public string Kind { get; set; } = string.Empty;
+
+        public IReadOnlyList<string> Aliases { get; set; } = [];
+
+        public int Min { get; set; }
+
+        public List<Guid> ItemIds { get; set; } = [];
+    }
 
     /// <summary>
     /// A collection definition.
@@ -555,6 +777,14 @@ public sealed class CollectionInfo
 
     /// <summary>Gets or sets how many shows are in it.</summary>
     public int Shows { get; set; }
+
+    /// <summary>Gets or sets how many titles it has, when <see cref="ItemIds"/> is only the start.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int Count { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether <see cref="ItemIds"/> is only the start (a big collection).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Partial { get; set; }
 
     /// <summary>Gets or sets the titles, in release order.</summary>
     public List<Guid> ItemIds { get; set; } = [];
