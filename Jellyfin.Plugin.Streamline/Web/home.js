@@ -8,6 +8,19 @@
     }
     window.__streamlineLoaded = true;
 
+    // Older engines: Jellyfin Desktop 1.12 (Jellyfin Media Player) runs on Qt 5.15, which is
+    // Chromium 83. Fill in what it lacks that's used here.
+    [window.Element, window.Document, window.DocumentFragment].forEach((type) => {
+        if (type && !type.prototype.replaceChildren) {
+            type.prototype.replaceChildren = function replaceChildren(...nodes) {
+                while (this.lastChild) {
+                    this.removeChild(this.lastChild);
+                }
+                this.append(...nodes);
+            };
+        }
+    });
+
     const SCRIPT_URL = document.currentScript ? document.currentScript.src : "";
     const RATE_HINT_KEY = "streamline-rate-hint-seen";
     const ENABLED_KEY = "streamline-enabled";
@@ -864,19 +877,55 @@
 
     // TMDb's TV genres are combined ("Action & Adventure"), so a plain "Action" row would
     // otherwise never show any series.
-    const GENRE_ALIASES = {
-        action: ["Action & Adventure"],
-        adventure: ["Action & Adventure"],
-        "sci-fi": ["Science Fiction"]
+    // The approved genres, and every name Jellyfin may give them: English and Dutch (TMDb in
+    // Dutch says "Actie", "Komedie"...), and TV's combined genres split into their parts. Any
+    // other genre ("Kids", "Soap", "Reality", "TV Movie"...) is left out everywhere.
+    const GENRE_VARIANTS = {
+        Action: ["Action", "Actie"],
+        Adventure: ["Adventure", "Avontuur"],
+        Comedy: ["Comedy", "Komedie"],
+        Crime: ["Crime", "Misdaad"],
+        Drama: ["Drama"],
+        Fantasy: ["Fantasy", "Fantasie"],
+        "Science Fiction": ["Science Fiction", "Sci-Fi", "Sciencefiction", "Science-fiction"],
+        Romance: ["Romance", "Romantiek", "Romantisch"],
+        Thriller: ["Thriller"],
+        Horror: ["Horror"],
+        Mystery: ["Mystery", "Mysterie"],
+        Animation: ["Animation", "Animatie"],
+        Family: ["Family", "Familie"],
+        War: ["War", "Oorlog"],
+        History: ["History", "Historie", "Historisch", "Geschiedenis"],
+        Music: ["Music", "Muziek"],
+        Western: ["Western"],
+        Documentary: ["Documentary", "Documentaire"]
     };
 
-    // Combined TV genres are never shown as such; they're split into the genres they're made of.
+    // Combined TV genres count as each part. "Sci-Fi & Fantasy" isn't queried as Sci-Fi or
+    // Fantasy for shows (their keywords decide those, see SERIES_GENRE_TAGS), but it is listed.
     const COMBINED_GENRES = {
-        "sci-fi & fantasy": ["Science Fiction", "Fantasy"],
         "action & adventure": ["Action", "Adventure"],
+        "actie & avontuur": ["Action", "Adventure"],
+        "sci-fi & fantasy": ["Science Fiction", "Fantasy"],
         // Mostly politics; shows count as War by their war keywords instead.
-        "war & politics": []
+        "war & politics": [],
+        "oorlog & politiek": []
     };
+    const QUERIED_COMBINED = ["Action & Adventure", "Actie & Avontuur"];
+
+    const GENRE_CANONICAL = new Map();
+    Object.entries(GENRE_VARIANTS).forEach(([name, variants]) => variants.forEach((variant) => GENRE_CANONICAL.set(variant.toLowerCase(), [name])));
+    Object.entries(COMBINED_GENRES).forEach(([combined, parts]) => GENRE_CANONICAL.set(combined, parts));
+
+    // A genre as Jellyfin has it, as the approved genres it stands for ([] for any other).
+    function canonicalGenres(raw) {
+        return GENRE_CANONICAL.get(String(raw || "").trim().toLowerCase()) || [];
+    }
+
+    // A title's genres for showing: approved ones only, by their shown names.
+    function shownGenres(item) {
+        return Array.from(new Set((item.Genres || []).flatMap(canonicalGenres))).map(genreLabel);
+    }
 
     // TMDb's TV genres have no Romance, Horror or Thriller and lump Fantasy in with Sci-Fi. For
     // shows those come from their TMDb keywords instead (Jellyfin keeps them as tags), which are
@@ -902,12 +951,16 @@
         return GENRE_LABELS[name.toLowerCase()] || name;
     }
 
+    // Every name to ask Jellyfin for when looking up a genre (its variants, and the combined
+    // TV genres it's part of).
     function genreNames(name) {
-        return [name].concat(GENRE_ALIASES[name.toLowerCase()] || []);
+        const canonical = canonicalGenres(name)[0] || name;
+        return (GENRE_VARIANTS[canonical] || [name]).concat(QUERIED_COMBINED.filter((combined) => canonicalGenres(combined).includes(canonical)));
     }
 
     function seriesTags(name) {
-        return SERIES_GENRE_TAGS[name.toLowerCase()] || null;
+        const canonical = canonicalGenres(name)[0] || name;
+        return SERIES_GENRE_TAGS[canonical.toLowerCase()] || null;
     }
 
     function usesTags(scope, name) {
@@ -915,8 +968,11 @@
     }
 
     function matchesGenre(item, name) {
-        const names = new Set(genreNames(name).map((genre) => genre.toLowerCase()));
-        if ((item.Genres || []).some((genre) => names.has(genre.toLowerCase()))) {
+        const canonical = canonicalGenres(name)[0] || name;
+        const viaSeries = item.Type === "Series" && seriesTags(name);
+        // Shows get Sci-Fi and Fantasy from keywords, not from TV's "Sci-Fi & Fantasy".
+        if ((item.Genres || []).some((genre) => canonicalGenres(genre).includes(canonical)
+            && !(viaSeries && genre.toLowerCase() === "sci-fi & fantasy"))) {
             return true;
         }
         const tags = item.Type === "Series" && seriesTags(name);
@@ -939,8 +995,9 @@
         const result = await getJson("Genres", { UserId: userId(), ParentId: scope.parentId || undefined, IncludeItemTypes: scope.types, Recursive: true, SortBy: "SortName" });
         const names = new Map();
         const add = (name) => names.set(name.toLowerCase(), names.get(name.toLowerCase()) || name);
+        // Only the approved genres, under their own names, whatever the library calls them.
         for (const genre of (result && result.Items) || []) {
-            (COMBINED_GENRES[genre.Name.toLowerCase()] || [genre.Name]).forEach(add);
+            canonicalGenres(genre.Name).forEach(add);
         }
         if (scope.types.split(",").includes("Series")) {
             Object.values(TAG_GENRE_NAMES).forEach(add);
@@ -976,7 +1033,7 @@
         const names = new Map();
         const add = (name) => name && !names.has(name.toLowerCase()) && names.set(name.toLowerCase(), name);
         mainGenres().forEach(add);
-        String(state.config.HeadlineGenres || "").split(",").map((name) => name.trim()).forEach(add);
+        String(state.config.HeadlineGenres || "").split(",").map((name) => canonicalGenres(name)[0]).forEach(add);
         (await libraryGenreNames(scope).catch(() => [])).forEach(add);
         if (scope.types === "Series") {
             add("Anime");
@@ -1021,11 +1078,13 @@
         return pinned.concat(rest).slice(0, count);
     }
 
+    // The admin's genre rows, as approved genres ("Sci-Fi" is Science Fiction).
     function mainGenres() {
-        return String((state.config && state.config.GenreRows) || "")
+        const names = String((state.config && state.config.GenreRows) || "")
             .split(",")
-            .map((name) => name.trim())
+            .map((name) => canonicalGenres(name)[0])
             .filter(Boolean);
+        return Array.from(new Set(names));
     }
 
     function scopeQuery(scope, params) {
@@ -1798,7 +1857,10 @@
         }
 
         if (item.Genres && item.Genres.length) {
-            body.appendChild(el("div", "sl-preview-genres", item.Genres.slice(0, 3).join(" • ")));
+            const genres = shownGenres(item);
+            if (genres.length) {
+                body.appendChild(el("div", "sl-preview-genres", genres.slice(0, 3).join(" • ")));
+            }
         }
 
         preview.appendChild(media);
@@ -2187,7 +2249,10 @@
         const meta = buildMetaLine(item);
         meta.classList.add("sl-meta--hero");
         if (item.Genres && item.Genres.length) {
-            meta.appendChild(el("span", "sl-meta-genres", item.Genres.slice(0, 3).join(" • ")));
+            const genres = shownGenres(item);
+            if (genres.length) {
+                meta.appendChild(el("span", "sl-meta-genres", genres.slice(0, 3).join(" • ")));
+            }
         }
         content.appendChild(meta);
 
@@ -3267,7 +3332,7 @@
             return [];
         }
         const genres = new Map();
-        mainGenres().concat(String(state.config.HeadlineGenres || "").split(","), Object.values(TAG_GENRE_NAMES), state.genreNames || [])
+        mainGenres().concat(String(state.config.HeadlineGenres || "").split(",").map((name) => canonicalGenres(name)[0] || ""), Object.values(TAG_GENRE_NAMES), state.genreNames || [])
             .map((name) => name.trim()).filter(Boolean)
             .forEach((name) => genres.set(name.toLowerCase(), name));
         const matches = [];
@@ -3544,6 +3609,14 @@
     }
 
     async function mount(view) {
+        try {
+            await mountPage(view);
+        } catch (error) {
+            giveUp(error);
+        }
+    }
+
+    async function mountPage(view) {
         const config = await loadConfig();
         if (state.view !== view || !view.container.isConnected) {
             return;
@@ -4167,7 +4240,36 @@
         return !!a && !!b && a.key === b.key && a.container === b.container;
     }
 
+    // If anything here goes wrong, step aside for the rest of the visit: Jellyfin's own pages
+    // come back as they are, rather than a page we hid and then failed to replace.
+    function giveUp(error) {
+        if (state.broken) {
+            return;
+        }
+        state.broken = true;
+        console.error("[Streamline] Something went wrong; showing Jellyfin's own pages for now.", error);
+        try {
+            document.querySelectorAll(".sl-root").forEach((root) => root.remove());
+            document.querySelectorAll(".sl-takeover").forEach((node) => node.classList.remove("sl-takeover"));
+            document.documentElement.classList.remove("sl-route", "sl-active", "sl-home", "sl-hero-page", "sl-scrolled", "sl-pending");
+            removeNav();
+        } catch {
+            /* nothing more to undo */
+        }
+    }
+
     function check() {
+        if (state.broken) {
+            return;
+        }
+        try {
+            checkPage();
+        } catch (error) {
+            giveUp(error);
+        }
+    }
+
+    function checkPage() {
         const uid = userId();
         if (!uid) {
             removeNav();

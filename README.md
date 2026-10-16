@@ -212,6 +212,22 @@ Ratings come from Jellyfin's metadata: the community rating (TMDb, or IMDb when 
 provider is enabled for the library) and the critic rating (Rotten Tomatoes, OMDb only). Titles
 without ratings count as average.
 
+## Genres
+
+Only the approved genres are used anywhere (rows, the Genres page, search, Customize, the genre
+line on cards): Action, Adventure, Comedy, Crime, Drama, Fantasy, Sci-Fi, Romance, Thriller,
+Horror, Mystery, Animation, Family, War, History, Music, Western and Documentaries, plus the
+sub-genres. Other genres a library may have (Kids, Soap, Reality, Biography, TV Movie...) are left
+out. Dutch genre names from TMDb (Actie, Komedie, Misdaad...) count as their English genres, and
+TV's combined genres (Action & Adventure) as their parts.
+
+## Apps
+
+Works in the browser, the PWA and the official apps built on the web client, including Jellyfin
+Desktop / Jellyfin Media Player 1.12, which runs on an older Chromium (Qt 5.15): the few things
+that engine lacks are filled in or have a CSS fallback. If anything in Streamline fails, it steps
+aside and Jellyfin's own pages show. The User view needs File Transformation or direct injection.
+
 ## Performance on a big library
 
 The heavy work runs at night (default times, changeable under Dashboard > Scheduled Tasks):

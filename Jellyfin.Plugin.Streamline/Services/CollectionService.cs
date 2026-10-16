@@ -143,6 +143,16 @@ public sealed class CollectionService
         new("dexter", "Dexter", ["dexter"], Prefixes: ["dexter"], SeriesOnly: true),
         new("downton-abbey", "Downton Abbey", ["downton"], Prefixes: ["downton abbey"]),
         new("peaky-blinders", "Peaky Blinders", ["peaky", "shelby"], Prefixes: ["peaky blinders"]),
+        // Brands TMDb splits into many little series.
+        new("barbie", "Barbie", ["barbie"], Prefixes: ["barbie"]),
+        new("lego", "LEGO", ["lego"], Prefixes: ["lego", "the lego"]),
+        new("scooby-doo", "Scooby-Doo", ["scooby", "scooby doo"], Prefixes: ["scooby doo"]),
+        new("pokemon", "Pokémon", ["pokemon", "pokémon"], Prefixes: ["pokemon"]),
+        new("tom-and-jerry", "Tom and Jerry", ["tom and jerry", "tom & jerry"], Prefixes: ["tom and jerry"]),
+        new("my-little-pony", "My Little Pony", ["my little pony", "mlp"], Prefixes: ["my little pony"]),
+        new("tinker-bell", "Tinker Bell", ["tinker bell", "disney fairies"], Prefixes: ["tinker bell"]),
+        new("winnie-the-pooh", "Winnie the Pooh", ["pooh", "winnie"], Prefixes: ["winnie the pooh"], Titles: ["the many adventures of winnie the pooh", "the tigger movie", "piglet's big movie", "pooh's heffalump movie", "christopher robin"]),
+        new("dragon-ball", "Dragon Ball", ["dragon ball", "dbz", "goku"], Prefixes: ["dragon ball"]),
     ];
 
     // Extra search words for TMDb movie series people call something else.
@@ -413,6 +423,38 @@ public sealed class CollectionService
         return name.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase) ? name[..^Suffix.Length] : name;
     }
 
+    // Words a collection name can't be grouped by ("The Matrix" and "The Godfather").
+    private static readonly HashSet<string> NotABrand = new(StringComparer.Ordinal)
+    {
+        "the", "a", "an", "de", "het", "een", "la", "le", "les", "el", "der", "die", "das", "my", "star", "john", "big", "little", "new", "dark", "night", "black", "white", "red", "blue", "super", "mr", "mrs", "dr", "lord"
+    };
+
+    // The brand word a TMDb series could be grouped by: its name's first word, when every one
+    // of its movies starts with it too.
+    private static string? SharedWord(string name, List<BaseItem> movies)
+    {
+        var word = Normalize(name).Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (word is null || word.Length < 3 || NotABrand.Contains(word))
+        {
+            return null;
+        }
+
+        return movies.All(movie => Normalize(movie.Name).Split(' ').FirstOrDefault() == word) ? word : null;
+    }
+
+    // The words names have in common at the start ("Barbie Fairytopia", "Barbie Mariposa": "Barbie").
+    private static string CommonName(List<string> names)
+    {
+        var split = names.Select(name => name.Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToList();
+        var count = 0;
+        while (split.All(words => words.Length > count) && split.All(words => string.Equals(Normalize(words[count]), Normalize(split[0][count]), StringComparison.Ordinal)))
+        {
+            count++;
+        }
+
+        return string.Join(' ', split[0].Take(Math.Max(1, count))).TrimEnd(':', '-', ',');
+    }
+
     private static List<Guid> InOrder(IEnumerable<BaseItem> items) => items
         .DistinctBy(item => item.Id)
         .OrderBy(item => item.PremiereDate ?? (item.ProductionYear is int year ? new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc) : DateTime.MaxValue))
@@ -558,6 +600,7 @@ public sealed class CollectionService
         }
 
         // Movie series from TMDb.
+        var pending = new List<(string Key, string Name, string[] Aliases, List<BaseItem> Movies)>();
         foreach (var group in items.OfType<Movie>()
             .Select(movie => (Movie: movie, Id: movie.GetProviderId(MetadataProvider.TmdbCollection)))
             .Where(entry => !string.IsNullOrEmpty(entry.Id) && !absorbed.Contains(entry.Id!) && !boxSetTmdb.Contains(entry.Id!))
@@ -585,21 +628,43 @@ public sealed class CollectionService
                 || (Normalize(stem).Contains(' ', StringComparison.Ordinal) && Normalize(show.Name).StartsWith(Normalize(stem) + " ", StringComparison.Ordinal)));
             var spinOffs = items.Where(item => item is MediaBrowser.Controller.Entities.TV.Series && !claimed.Contains(item.Id) && IsSpinOff(item)).ToList();
             var franchise = spinOffs.Count > 0 && movies.Count >= MinUniverseItems;
-            if ((!franchise && movies.Count < MinTmdbItems) || !names.Add(Normalize(CleanCollectionName(name))))
+            var aliases = TmdbAliases.GetValueOrDefault(group.Key) ?? [];
+            if (franchise)
+            {
+                if (names.Add(Normalize(CleanCollectionName(name))))
+                {
+                    claimed.UnionWith(spinOffs.Select(item => item.Id));
+                    universes.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "universe", aliases, movies.Concat(spinOffs).ToList(), MinUniverseItems));
+                }
+
+                continue;
+            }
+
+            // Already (mostly) a franchise here, like the Barbie films: not again as a series.
+            if (universes.Any(universe => movies.Count(movie => universe.ItemIds.Contains(movie.Id)) * 5 >= movies.Count * 4))
             {
                 continue;
             }
 
-            var aliases = TmdbAliases.GetValueOrDefault(group.Key) ?? [];
-            if (franchise)
+            pending.Add((group.Key, CleanCollectionName(name), aliases, movies));
+        }
+
+        // TMDb splits some brands into many small series ("Barbie Fairytopia", "Barbie Mariposa",
+        // and so on). Series whose names start with the same word, and whose movies all start with it too,
+        // are one collection, named by what their names have in common.
+        foreach (var cluster in pending
+            .GroupBy(entry => SharedWord(entry.Name, entry.Movies) ?? "\u0000" + entry.Key)
+            .Select(group => group.ToList()))
+        {
+            var movies = cluster.SelectMany(entry => entry.Movies).DistinctBy(movie => movie.Id).ToList();
+            var name = cluster.Count == 1 ? cluster[0].Name : CommonName(cluster.Select(entry => entry.Name).ToList());
+            if (movies.Count < MinTmdbItems || !names.Add(Normalize(name)))
             {
-                claimed.UnionWith(spinOffs.Select(item => item.Id));
-                universes.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "universe", aliases, movies.Concat(spinOffs).ToList(), MinUniverseItems));
+                continue;
             }
-            else
-            {
-                series.Add(Info("tmdb-" + group.Key, CleanCollectionName(name), "collection", aliases, movies, MinTmdbItems));
-            }
+
+            var id = "tmdb-" + string.Join("-", cluster.Select(entry => entry.Key).OrderBy(key => key, StringComparer.Ordinal));
+            series.Add(Info(id, name, "collection", cluster.SelectMany(entry => entry.Aliases).Distinct().ToList(), movies, MinTmdbItems));
         }
 
         static IEnumerable<SnapshotEntry> Biggest(List<SnapshotEntry> list) => list

@@ -160,12 +160,18 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-hero-slides {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
 }
 
 .sl-hero-slide {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     opacity: 0;
     visibility: hidden;
     transition: opacity 1s ease, visibility 0s linear 1s;
@@ -180,7 +186,10 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-hero-backdrop {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -206,7 +215,10 @@ html.sl-route .skinHeader .headerTabs {
 .sl-hero-slide::after {
     content: "";
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background:
         linear-gradient(77deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.45) 30%, rgba(0, 0, 0, 0) 62%),
         linear-gradient(to top, var(--sl-bg) 0%, rgba(16, 16, 16, 0.6) 14%, rgba(16, 16, 16, 0) 34%);
@@ -244,7 +256,7 @@ html.sl-route .skinHeader .headerTabs {
     display: inline-block;
     padding: 0.3em 0.7em;
     border-radius: 4px;
-    background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    background: var(--sl-accent);
     color: #fff;
     font-size: clamp(0.7rem, 0.85vw, 0.85rem);
     font-weight: 800;
@@ -367,7 +379,10 @@ html.sl-route .skinHeader .headerTabs {
 .sl-hero-arrow--prev { left: 1vw; }
 .sl-hero-arrow--next { right: 1vw; }
 
-.sl-hero:hover .sl-hero-arrow,
+.sl-hero:hover .sl-hero-arrow {
+    opacity: 1;
+}
+
 .sl-hero-arrow:focus-visible {
     opacity: 1;
 }
@@ -621,7 +636,10 @@ html.sl-route .skinHeader .headerTabs {
 .sl-row-arrow--prev { left: 0; border-radius: 0 4px 4px 0; }
 .sl-row-arrow--next { right: 0; border-radius: 4px 0 0 4px; }
 
-.sl-row:hover .sl-row-arrow,
+.sl-row:hover .sl-row-arrow {
+    opacity: 1;
+}
+
 .sl-row-arrow:focus-visible {
     opacity: 1;
 }
@@ -694,7 +712,10 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-card-img {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -710,7 +731,10 @@ html.sl-route .skinHeader .headerTabs {
 .sl-preview-media::after {
     content: "";
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 55%);
     pointer-events: none;
 }
@@ -755,7 +779,10 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-card-name--center {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -786,7 +813,11 @@ html.sl-route .skinHeader .headerTabs {
     font-size: 1.9rem;
 }
 
-.sl-card:hover .sl-card-play,
+.sl-card:hover .sl-card-play {
+    opacity: 1;
+    transform: scale(1);
+}
+
 .sl-card:focus-visible .sl-card-play {
     opacity: 1;
     transform: scale(1);
@@ -957,7 +988,11 @@ html.sl-route .skinHeader .headerTabs {
     min-height: 0;
 }
 
-.sl-row:hover .sl-row-explore,
+.sl-row:hover .sl-row-explore {
+    opacity: 1;
+    transform: none;
+}
+
 .sl-row-link:focus-visible .sl-row-explore {
     opacity: 1;
     transform: none;
@@ -983,7 +1018,10 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-more-inner {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1006,7 +1044,11 @@ html.sl-route .skinHeader .headerTabs {
     transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
-.sl-card--more:hover .sl-more-inner .material-icons,
+.sl-card--more:hover .sl-more-inner .material-icons {
+    transform: translateX(4px);
+    border-color: #fff;
+}
+
 .sl-card--more:focus-visible .sl-more-inner .material-icons {
     transform: translateX(4px);
     border-color: #fff;
@@ -1033,7 +1075,7 @@ html.sl-route .skinHeader .headerTabs {
     left: 8px;
     padding: 0.2em 0.55em;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    background: var(--sl-accent);
     color: #fff;
     font-size: 0.68rem;
     font-weight: 800;
@@ -1205,7 +1247,11 @@ html.sl-route .skinHeader .headerTabs {
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.sl-genre-tile:hover,
+.sl-genre-tile:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+}
+
 .sl-genre-tile:focus-visible {
     transform: translateY(-3px);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
@@ -1218,7 +1264,10 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-genre-mosaic {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
@@ -1248,7 +1297,10 @@ html.sl-route .skinHeader .headerTabs {
 .sl-genre-tile::after {
     content: "";
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.55) 35%, rgba(0, 0, 0, 0.05) 70%);
 }
 
@@ -1347,7 +1399,12 @@ html.sl-route .skinHeader .headerTabs {
     min-height: 0;
 }
 
-.sl-rate-option:hover,
+.sl-rate-option:hover {
+    transform: scale(1.18);
+    background: rgba(255, 255, 255, 0.14);
+    outline: none;
+}
+
 .sl-rate-option:focus-visible {
     transform: scale(1.18);
     background: rgba(255, 255, 255, 0.14);
@@ -1356,7 +1413,7 @@ html.sl-route .skinHeader .headerTabs {
 
 .sl-rate-option.is-on {
     border-color: var(--sl-rate-color);
-    background: color-mix(in srgb, var(--sl-rate-color) 22%, transparent);
+    background: rgba(170, 92, 195, 0.25);
 }
 
 .sl-rate-caption {
@@ -1524,7 +1581,10 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
 
 .sl-trailer-facade {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     padding: 0;
@@ -1541,7 +1601,11 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
     transition: opacity 0.2s ease, transform 0.4s ease;
 }
 
-.sl-trailer-facade:hover .sl-trailer-thumb,
+.sl-trailer-facade:hover .sl-trailer-thumb {
+    opacity: 1;
+    transform: scale(1.02);
+}
+
 .sl-trailer-facade:focus-visible .sl-trailer-thumb {
     opacity: 1;
     transform: scale(1.02);
@@ -1580,7 +1644,10 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
 
 .sl-trailer-iframe {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: 0;
@@ -1805,7 +1872,10 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
 .sl-phone-preview {
     position: fixed;
     z-index: 2000;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1863,7 +1933,10 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
 
 .sl-browse-img {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -1878,12 +1951,18 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
 .sl-browse-tile::after {
     content: "";
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: linear-gradient(90deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 55%, rgba(0, 0, 0, 0.15) 100%);
     transition: background-color 0.3s ease;
 }
 
-.sl-browse-tile:hover .sl-browse-img,
+.sl-browse-tile:hover .sl-browse-img {
+    transform: scale(1.05);
+}
+
 .sl-browse-tile:focus-visible .sl-browse-img {
     transform: scale(1.05);
 }
@@ -2196,10 +2275,15 @@ html.sl-nav-on .itemDetailPage form.trackSelections {
     transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.sl-partof-link:hover,
+.sl-partof-link:hover {
+    border-color: var(--sl-accent);
+    background: rgba(170, 92, 195, 0.25);
+    outline: none;
+}
+
 .sl-partof-link:focus-visible {
     border-color: var(--sl-accent);
-    background: color-mix(in srgb, var(--sl-accent) 22%, transparent);
+    background: rgba(170, 92, 195, 0.25);
     outline: none;
 }
 
@@ -2252,7 +2336,11 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     cursor: pointer;
 }
 
-.sl-usermenu-item:hover,
+.sl-usermenu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
 .sl-usermenu-item:focus-visible {
     background: rgba(255, 255, 255, 0.08);
     outline: none;
@@ -2273,7 +2361,10 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 .sl-userview {
     position: fixed;
     z-index: 1990;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     flex-direction: column;
     background: #000;
@@ -2326,7 +2417,11 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     font-size: 1rem;
 }
 
-.sl-dash-home:hover,
+.sl-dash-home:hover {
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
 .sl-dash-home:focus-visible {
     background: rgba(255, 255, 255, 0.08);
     outline: none;
@@ -2356,7 +2451,12 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     cursor: pointer;
 }
 
-.sl-row-extra:hover,
+.sl-row-extra:hover {
+    color: #fff;
+    border-color: var(--sl-accent);
+    outline: none;
+}
+
 .sl-row-extra:focus-visible {
     color: #fff;
     border-color: var(--sl-accent);
@@ -2370,7 +2470,10 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 .sl-dialog {
     position: fixed;
     z-index: 2100;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2465,7 +2568,7 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 
 .sl-dialog-btn.is-on {
     border-color: var(--sl-accent);
-    background: color-mix(in srgb, var(--sl-accent) 30%, transparent);
+    background: rgba(170, 92, 195, 0.25);
     color: #fff;
 }
 
@@ -2498,4 +2601,283 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 .sl-dialog-save {
     background: #fff;
     color: #000;
+}
+
+
+/* ---- Older engines (Jellyfin Desktop 1.12 is Chromium 83) -------------------------------- */
+
+/* No aspect-ratio before Chromium 88: a spacer gives the same height; what's inside is
+   positioned on top of it. No flex gap before 84: margins between cards in rows. */
+@supports not (aspect-ratio: 1 / 1) {
+    .sl-card-media::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+    }
+
+    .sl-card--poster .sl-card-media::before,
+.sl-card--top10 .sl-card-media::before {
+        content: "";
+        display: block;
+        padding-top: 150.0%;
+    }
+
+    .sl-preview-media::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+    }
+
+    .sl-skeleton--card::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+    }
+
+    .sl-skeleton--grid::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+    }
+
+    .sl-skeleton--tile::before {
+        content: "";
+        display: block;
+        padding-top: 150.0%;
+    }
+
+    .sl-genre-tile::before {
+        content: "";
+        display: block;
+        padding-top: 150.0%;
+    }
+
+    .sl-trailer-frame::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+    }
+
+    .sl-browse-tile::before {
+        content: "";
+        display: block;
+        padding-top: 42.8571%;
+    }
+
+    @media (max-width: 640px) {
+        .sl-skeleton--grid::before {
+            content: "";
+            display: block;
+            padding-top: 150.0%;
+        }
+
+        .sl-browse-tile::before {
+            content: "";
+            display: block;
+            padding-top: 75.0%;
+        }
+    }
+
+    .sl-row-track > * + * {
+        margin-left: var(--sl-gap);
+    }
+
+
+    /* No flex gap before Chromium 84: margins between the items instead. */
+    .sl-nav > * + * {
+        margin-left: 0.2em;
+    }
+
+    .sl-hero-content > * + * {
+        margin-top: 1rem;
+    }
+
+    .sl-hero-actions > * + * {
+        margin-left: 0.7rem;
+    }
+
+    .sl-hero-dots > * + * {
+        margin-left: 6px;
+    }
+
+    .sl-btn > * + * {
+        margin-left: 0.45rem;
+    }
+
+    .sl-meta > * + * {
+        margin-left: 0.75em;
+    }
+
+    .sl-meta-rating > * + * {
+        margin-left: 0.2em;
+    }
+
+    .sl-meta-critic > * + * {
+        margin-left: 0.3em;
+    }
+
+    .sl-row-track > * + * {
+        margin-left: var(--sl-gap);
+    }
+
+    .sl-preview-body > * + * {
+        margin-top: 0.6rem;
+    }
+
+    .sl-preview-actions > * + * {
+        margin-left: 0.5rem;
+    }
+
+    .sl-preview-progress > * + * {
+        margin-left: 0.6rem;
+    }
+
+    .sl-row-link > * + * {
+        margin-left: 0.6em;
+    }
+
+    .sl-more-inner > * + * {
+        margin-top: 0.25em;
+    }
+
+    .sl-browse-head > * + * {
+        margin-left: 1.5rem;
+    }
+
+    .sl-sort > * + * {
+        margin-left: 1rem;
+    }
+
+    .sl-sort-chips > * + * {
+        margin-left: 0.5rem;
+    }
+
+    .sl-sort-direction > * + * {
+        margin-left: 0.35em;
+    }
+
+    .sl-genre-text > * + * {
+        margin-top: 0.15em;
+    }
+
+    .sl-rate-options > * + * {
+        margin-left: 0.35rem;
+    }
+
+    .sl-detail-buttons > * + * {
+        margin-left: 0.55rem;
+    }
+
+    .sl-detail-group > * + * {
+        margin-left: 0.55rem;
+    }
+
+    .sl-trailer-external > * + * {
+        margin-left: 0.35em;
+    }
+
+    .sl-trailer-head > * + * {
+        margin-left: 1.2rem;
+    }
+
+    .sl-trailer-picks > * + * {
+        margin-left: 0.4rem;
+    }
+
+    .sl-tab > * + * {
+        margin-top: 2px;
+    }
+
+    .sl-search-head > * + * {
+        margin-top: 1rem;
+    }
+
+    .sl-search-field > * + * {
+        margin-left: 0.6rem;
+    }
+
+    .sl-search-genres > * + * {
+        margin-left: 0.5rem;
+    }
+
+    .sl-people > * + * {
+        margin-left: 0.8rem;
+    }
+
+    .sl-person > * + * {
+        margin-left: 0.6rem;
+    }
+
+    .sl-phone-toggle > * + * {
+        margin-left: 0.4em;
+    }
+
+    .sl-browse-text > * + * {
+        margin-top: 0.2em;
+    }
+
+    .sl-partof > * + * {
+        margin-left: 0.5em;
+    }
+
+    .sl-usermenu-item > * + * {
+        margin-left: 12px;
+    }
+
+    .sl-userview-bar > * + * {
+        margin-left: 0.5em;
+    }
+
+    .sl-dash-home > * + * {
+        margin-left: 32px;
+    }
+
+    .sl-row-extra > * + * {
+        margin-left: 0.25em;
+    }
+
+    .sl-dialog-auto > * + * {
+        margin-left: 0.6em;
+    }
+
+    .sl-dialog-row > * + * {
+        margin-left: 0.5em;
+    }
+
+    .sl-dialog-actions > * + * {
+        margin-left: 4px;
+    }
+
+    .sl-dialog-footer > * + * {
+        margin-left: 8px;
+    }
+}
+
+
+/* color-mix only where it's understood: with a CSS variable inside, an engine without it
+   would otherwise drop the whole value instead of using the plain colour above. */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+    .sl-hero-badge {
+        background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    }
+
+    .sl-card-badge {
+        background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    }
+
+    .sl-rate-option.is-on {
+        background: color-mix(in srgb, var(--sl-rate-color) 22%, transparent);
+    }
+
+    .sl-partof-link:hover {
+        background: color-mix(in srgb, var(--sl-accent) 22%, transparent);
+    }
+
+    .sl-partof-link:focus-visible {
+        background: color-mix(in srgb, var(--sl-accent) 22%, transparent);
+    }
+
+    .sl-dialog-btn.is-on {
+        background: color-mix(in srgb, var(--sl-accent) 30%, transparent);
+    }
 }
