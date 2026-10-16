@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Streamline</title>
+</head>
+<body>
+    <div id="StreamlineConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="StreamlineConfigForm">
+                    <div class="verticalSection">
+                        <h2>Streamline</h2>
+                        <p>Replaces the home screen in the web client (and the Android/iOS apps, which use it) with a streamlined, cinematic one. Changes apply the next time a page is loaded; no restart needed.</p>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="Enabled" data-field="Enabled" type="checkbox" is="emby-checkbox" />
+                            <span>Use the new home screen</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="LibraryPagesEnabled" data-field="LibraryPagesEnabled" type="checkbox" is="emby-checkbox" />
+                            <span>Also streamline the Movies and Shows pages</span>
+                        </label>
+                        <div class="fieldDescription">Their first tab gets a banner and rows (My List, Recommended, Critically Acclaimed, genres); the other tabs stay as they are. Rows link to "see all" pages.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AccentColor">Accent color</label>
+                        <input id="AccentColor" data-field="AccentColor" type="text" is="emby-input" placeholder="#aa5cc3" />
+                        <div class="fieldDescription">Any CSS color. Used for progress bars, focus rings and highlights.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewSeriesBadgeDays">Shows keep their "New Series" / "New Episodes" tag for ... days</label>
+                        <input id="NewSeriesBadgeDays" data-field="NewSeriesBadgeDays" data-type="int" type="number" is="emby-input" min="1" max="365" />
+                        <div class="fieldDescription">Counted from the latest episode's air date. "New Series" while only the first season has aired, "New Episodes" for a new season or episodes of an older show.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBadgeDays">Movies keep their "New Release" tag for ... days</label>
+                        <input id="NewMovieBadgeDays" data-field="NewMovieBadgeDays" data-type="int" type="number" is="emby-input" min="1" max="365" />
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="TrailersEnabled" data-field="TrailersEnabled" type="checkbox" is="emby-checkbox" />
+                            <span>Embed trailers on movie and show pages</span>
+                        </label>
+                        <div class="fieldDescription">From the YouTube links TMDb provides. Only a thumbnail loads until someone presses play (then it plays from youtube-nocookie.com).</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RecentlyAddedBadgeDays">New on Jellyfin covers the last ... days</label>
+                        <input id="RecentlyAddedBadgeDays" data-field="RecentlyAddedBadgeDays" data-type="int" type="number" is="emby-input" min="1" max="365" />
+                        <div class="fieldDescription">What the New on Jellyfin row and page count as new: movies and shows added to the server (or shows that got new episodes) in this many days.</div>
+                    </div>
+
+                    <div class="verticalSection"><h3>Hero banner</h3></div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="HeroEnabled" data-field="HeroEnabled" type="checkbox" is="emby-checkbox" />
+                            <span>Show the hero banner</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="HeroMaxAgeDays">Only feature titles from the last ... days</label>
+                        <input id="HeroMaxAgeDays" data-field="HeroMaxAgeDays" data-type="int" type="number" is="emby-input" min="7" max="730" />
+                        <div class="fieldDescription">Movies released in this period, and shows that are new or got a new season or new episodes in it (going by air date). If fewer than 3 titles qualify, the banner is topped up with what was most recently added to the server.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="HeroItemCount">Number of titles</label>
+                        <input id="HeroItemCount" data-field="HeroItemCount" data-type="int" type="number" is="emby-input" min="1" max="12" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="HeroIntervalSeconds">Seconds per title</label>
+                        <input id="HeroIntervalSeconds" data-field="HeroIntervalSeconds" data-type="int" type="number" is="emby-input" min="4" max="60" />
+                    </div>
+
+                    <div class="verticalSection"><h3>Rows</h3></div>
+
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="GenreRows">Genre rows</label>
+                        <input id="GenreRows" data-field="GenreRows" type="text" is="emby-input" />
+                        <div class="fieldDescription">Comma separated, in order. Shows' combined genres ("Action &amp; Adventure", "Sci-Fi &amp; Fantasy") are included automatically. Rows with fewer than 4 titles are skipped. Leave empty for no genre rows.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="HeadlineGenres">Headline genres on the Genres page</label>
+                        <input id="HeadlineGenres" data-field="HeadlineGenres" type="text" is="emby-input" />
+                        <div class="fieldDescription">Comma separated, in order; shown first and larger. Sub-genres and every other genre follow.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CustomCollections">Extra collections</label>
+                        <textarea id="CustomCollections" data-field="CustomCollections" is="emby-textarea" class="emby-textarea" rows="4" placeholder="Pixar Favorites = Toy Story; Up; Coco; Inside Out"></textarea>
+                        <div class="fieldDescription">The Collections page already has, in this order: Featured (Disney, Marvel, DC, Pixar, Musicals, Best Picture Winners, Studio Ghibli, DreamWorks Animation, Christmas, Halloween, A24, Stephen King, Video Game Adaptations, Under 90 Minutes; each from 3 titles), franchises across movies and shows (MCU, X-Men, Star Wars, Batman, Superman, Breaking Bad, Game of Thrones and more), directors with 4 or more movies here, and movie series (TMDb, 3 or more movies, like James Bond) plus collections made in Jellyfin. Add your own here, one per line: a name, =, then the titles separated by ;. They go at the front of Featured. A title is matched by its exact name.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RowItemLimit">Titles per row</label>
+                        <input id="RowItemLimit" data-field="RowItemLimit" data-type="int" type="number" is="emby-input" min="6" max="50" />
+                    </div>
+
+                    <div class="verticalSection"><h3>New media</h3></div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AutoFillMetadata" data-field="AutoFillMetadata" type="checkbox" is="emby-checkbox" />
+                            <span>Automatically fetch missing genres, keywords and trailers</span>
+                        </label>
+                        <div class="fieldDescription">
+                            However a movie or show arrives (Radarr/Sonarr after a Seerr request, or copied in by hand), Jellyfin's
+                            library scan fetches its metadata from TMDb. Brand-new releases often don't have a trailer or keywords there
+                            yet, though. With this on, 15 minutes after a title is added anything still missing is fetched again, and the
+                            daily task "Fill in missing genres and trailers" (Dashboard &gt; Scheduled Tasks) keeps retrying recent
+                            additions. It only fills gaps; nothing already there is replaced. Needs TMDb enabled as a metadata
+                            downloader for the library (and OMDb for Rotten Tomatoes scores).
+                        </div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MetadataLookbackDays">Keep retrying titles added in the last ... days</label>
+                        <input id="MetadataLookbackDays" data-field="MetadataLookbackDays" data-type="int" type="number" is="emby-input" min="1" max="3650" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="YouTubeApiKey">YouTube API key (optional)</label>
+                        <input id="YouTubeApiKey" data-field="YouTubeApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">
+                            Trailers come from TMDb, and for titles TMDb has none for, from KinoCheck (free, no key). With a YouTube Data API
+                            key (Google Cloud console, free tier), titles neither has get a YouTube search as a last resort. Found trailers are
+                            saved into the title's own metadata; users can't change them.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AutoFixIdentity" data-field="AutoFixIdentity" type="checkbox" is="emby-checkbox" />
+                            <span>Fix wrongly identified titles and missing posters automatically</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Compares each movie and show with its folder name and year (what Radarr/Sonarr or you named it). When Jellyfin's
+                            match doesn't fit (another name and year, or no match at all), it's looked up again and re-identified if exactly
+                            one result clearly fits, like using Identify by hand. Missing posters are fetched again. Runs on new titles and
+                            daily ("Fix wrong titles and posters"). Locked titles are never touched; anything uncertain, or still wrong after an automatic fix (checked again about 10 minutes later), is listed below to fix by hand.
+                        </div>
+                    </div>
+
+                    <div id="IssuesBox" class="fieldDescription" style="margin-bottom:2em"></div>
+
+                    <div class="verticalSection"><h3>Seerr</h3></div>
+                    <p class="fieldDescription">Requests made in Seerr (Jellyseerr or Overseerr) go on the requester's Watch List as soon as they're in Jellyfin.</p>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="SeerrAddToWatchList" data-field="SeerrAddToWatchList" type="checkbox" is="emby-checkbox" />
+                            <span>Put requested titles on the requester's Watch List</span>
+                        </label>
+                        <div class="fieldDescription">Requesters are matched to Jellyfin users by their linked Jellyfin account (Jellyseerr) or user name. Each request is added once (removing it from the Watch List sticks), including requests made before this was connected.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeerrUrl">Seerr address</label>
+                        <input id="SeerrUrl" data-field="SeerrUrl" type="text" is="emby-input" placeholder="http://192.168.1.10:5055" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeerrApiKey">Seerr API key</label>
+                        <input id="SeerrApiKey" data-field="SeerrApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Seerr: Settings &gt; General &gt; API Key.</div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="button" id="SeerrTestButton" class="raised emby-button"><span>Save, test and sync now</span></button>
+                        <div id="SeerrStatus" class="fieldDescription"></div>
+                    </div>
+
+                    <div class="verticalSection"><h3>Advanced</h3></div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="ShowPhonePreview" data-field="ShowPhonePreview" type="checkbox" is="emby-checkbox" />
+                            <span>Show a phone preview button (for testing)</span>
+                        </label>
+                        <div class="fieldDescription">Adds a small button at the bottom left that opens the current page in a phone-sized frame, laid out the way a phone gets it, so the phone layout can be checked from a computer. Visible to everyone while on; meant for testing.</div>
+                    </div>
+
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="FrontendInjectionMethod">Frontend injection method</label>
+                        <select is="emby-select" id="FrontendInjectionMethod" data-field="FrontendInjectionMethod" class="emby-select-withcolor emby-select">
+                            <option value="automatic">Automatic (recommended)</option>
+                            <option value="file-transformation">File Transformation plugin</option>
+                            <option value="javascript-injector">JavaScript Injector plugin</option>
+                            <option value="direct">Direct (patch jellyfin-web/index.html)</option>
+                            <option value="disabled">Disabled</option>
+                        </select>
+                        <div class="fieldDescription">
+                            How the home screen's script gets loaded into the web client. Automatic tries the File
+                            Transformation and JavaScript Injector plugins first (if installed), then falls back to
+                            patching index.html directly. Changing this takes effect after a server restart.
+                        </div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var StreamlineConfig = {
+                pluginUniqueId: 'd0c3935f-a1ab-430c-95ed-388ce83b1431'
+            };
+
+            document.querySelector('#StreamlineConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(StreamlineConfig.pluginUniqueId).then(function (config) {
+                        document.querySelectorAll('#StreamlineConfigForm [data-field]').forEach(function (field) {
+                            var value = config[field.dataset.field];
+                            if (field.type === 'checkbox') {
+                                field.checked = value;
+                            } else {
+                                field.value = value;
+                            }
+                        });
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            function loadIssues() {
+                var box = document.querySelector('#IssuesBox');
+                ApiClient.getJSON(ApiClient.getUrl('Streamline/Admin/Issues')).then(function (issues) {
+                    if (!issues.length) {
+                        box.textContent = 'Nothing needs fixing by hand right now.';
+                        return;
+                    }
+                    box.innerHTML = '<strong>Needs fixing by hand</strong> (' + issues.length + '): open each one and use Identify, or Edit images for a poster. Press Done when it\'s right, so it isn\'t flagged again.';
+                    var list = document.createElement('div');
+                    list.style.marginTop = '0.8em';
+                    issues.forEach(function (issue) {
+                        var row = document.createElement('div');
+                        row.style.cssText = 'display:flex;align-items:center;gap:0.8em;padding:0.5em 0;border-top:1px solid rgba(255,255,255,0.1)';
+                        var text = document.createElement('div');
+                        text.style.flex = '1';
+                        var name = document.createElement('strong');
+                        name.textContent = issue.Name + (issue.Type ? ' (' + issue.Type + ')' : '');
+                        text.appendChild(name);
+                        text.appendChild(document.createElement('br'));
+                        text.appendChild(document.createTextNode(issue.Problem + (issue.Expected ? ' (folder: "' + issue.Expected + '")' : '')));
+                        var open = document.createElement('a');
+                        open.href = '#/details?id=' + issue.ItemId;
+                        open.className = 'button-link';
+                        open.textContent = 'Open';
+                        var done = document.createElement('button');
+                        done.type = 'button';
+                        done.className = 'raised emby-button';
+                        done.textContent = 'Done';
+                        done.addEventListener('click', function () {
+                            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Streamline/Admin/Issues/' + issue.ItemId + '/Done') }).then(function () {
+                                row.remove();
+                            });
+                        });
+                        row.appendChild(text);
+                        row.appendChild(open);
+                        row.appendChild(done);
+                        list.appendChild(row);
+                    });
+                    box.appendChild(list);
+                }).catch(function () {
+                    box.textContent = '';
+                });
+            }
+
+            function readForm(config) {
+                document.querySelectorAll('#StreamlineConfigForm [data-field]').forEach(function (field) {
+                    if (field.type === 'checkbox') {
+                        config[field.dataset.field] = field.checked;
+                    } else if (field.dataset.type === 'int') {
+                        config[field.dataset.field] = parseInt(field.value, 10);
+                    } else {
+                        config[field.dataset.field] = field.value;
+                    }
+                });
+                return config;
+            }
+
+            document.querySelector('#StreamlineConfigPage').addEventListener('pageshow', loadIssues);
+
+            document.querySelector('#SeerrTestButton').addEventListener('click', function () {
+                var status = document.querySelector('#SeerrStatus');
+                status.textContent = 'Testing\u2026';
+                ApiClient.getPluginConfiguration(StreamlineConfig.pluginUniqueId).then(function (config) {
+                    return ApiClient.updatePluginConfiguration(StreamlineConfig.pluginUniqueId, readForm(config));
+                }).then(function () {
+                    return ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Streamline/Admin/SeerrTest'), dataType: 'json' });
+                }).then(function (result) {
+                    status.textContent = result;
+                }).catch(function () {
+                    status.textContent = 'Test failed; check the server log.';
+                });
+            });
+
+            document.querySelector('#StreamlineConfigForm')
+                .addEventListener('submit', function (e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(StreamlineConfig.pluginUniqueId).then(function (config) {
+                        readForm(config);
+                        ApiClient.updatePluginConfiguration(StreamlineConfig.pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+
+                    e.preventDefault();
+                    return false;
+                });
+        </script>
+    </div>
+</body>
+</html>

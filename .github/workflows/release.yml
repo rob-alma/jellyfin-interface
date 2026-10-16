@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.1.0"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Resolve release tag and version
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish plugin
+        run: |
+          dotnet publish Jellyfin.Plugin.Streamline/Jellyfin.Plugin.Streamline.csproj \
+            --configuration Release \
+            --output artifacts/publish \
+            -p:Version=${{ steps.release.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.release.outputs.version }} \
+            -p:FileVersion=${{ steps.release.outputs.version }}
+
+      - name: Package plugin zip and repository manifest
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.release.outputs.tag }}"
+          VERSION="${{ steps.release.outputs.version }}"
+          REPO="${{ github.repository }}"
+
+          PACKAGE_DIR="$(pwd)/artifacts/package"
+          REPOSITORY_DIR="$(pwd)/artifacts/repository"
+          mkdir -p "$PACKAGE_DIR" "$REPOSITORY_DIR"
+
+          # Copy every DLL from the publish output (not just the plugin's own), so a
+          # runtime dependency like Newtonsoft.Json isn't silently left out of the zip.
+          cp artifacts/publish/*.dll "$PACKAGE_DIR/"
+          cp artifacts/publish/meta.json "$PACKAGE_DIR/"
+
+          python3 - "$PACKAGE_DIR/meta.json" "$VERSION" <<'PY'
+          import json, sys
+          path, version = sys.argv[1], sys.argv[2]
+          with open(path) as f:
+              meta = json.load(f)
+          meta["version"] = version
+          with open(path, "w") as f:
+              json.dump(meta, f, indent=2)
+          PY
+
+          ZIP_NAME="Jellyfin.Plugin.Streamline_${VERSION}.zip"
+          ZIP_PATH="$REPOSITORY_DIR/${ZIP_NAME}"
+          (cd "$PACKAGE_DIR" && zip -r "$ZIP_PATH" .)
+
+          CHECKSUM=$(md5sum "$ZIP_PATH" | awk '{print $1}')
+          SOURCE_URL="https://github.com/${REPO}/releases/download/${TAG}/${ZIP_NAME}"
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S")
+
+          python3 - "$PACKAGE_DIR/meta.json" "$CHECKSUM" "$SOURCE_URL" "$TIMESTAMP" "$REPOSITORY_DIR/manifest.json" <<'PY'
+          import json, sys
+          meta_path, checksum, source_url, timestamp, manifest_path = sys.argv[1:6]
+          with open(meta_path) as f:
+              meta = json.load(f)
+          manifest = [{
+              "category": meta["category"],
+              "guid": meta["guid"],
+              "name": meta["name"],
+              "description": meta["description"],
+              "owner": meta["owner"],
+              "overview": meta["overview"],
+              "versions": [{
+                  "checksum": checksum,
+                  "changelog": meta["changelog"],
+                  "targetAbi": meta["targetAbi"],
+                  "sourceUrl": source_url,
+                  "timestamp": timestamp,
+                  "version": meta["version"],
+              }],
+          }]
+          with open(manifest_path, "w") as f:
+              json.dump(manifest, f, indent=2)
+          PY
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.release.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --notes "Jellyfin Streamline plugin $TAG"
+          fi
+          gh release upload "$TAG" artifacts/repository/*.zip artifacts/repository/manifest.json --clobber

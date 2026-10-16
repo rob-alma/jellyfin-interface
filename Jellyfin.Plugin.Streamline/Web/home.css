@@ -1,0 +1,2264 @@
+/* Streamline. Everything is scoped under .sl-* classes, or under html.sl-active / sl-home /
+   sl-hero-page (set only while one of our pages is showing), so no other page is affected. */
+
+:root {
+    --sl-accent: #aa5cc3;
+    --sl-bg: #101010;
+    --sl-surface: #181818;
+    --sl-text: #fff;
+    --sl-text-dim: #b3b3b3;
+    --sl-gutter: 4vw;
+    --sl-gap: 0.45vw;
+    --sl-landscape-n: 6;
+    --sl-poster-n: 7;
+}
+
+@media (max-width: 1399px) { :root { --sl-landscape-n: 5; } }
+@media (max-width: 1099px) { :root { --sl-landscape-n: 4; } }
+@media (max-width: 799px) { :root { --sl-landscape-n: 3; --sl-gap: 6px; } }
+@media (max-width: 640px) { :root { --sl-landscape-n: 1.8; --sl-poster-n: 3.3; --sl-gutter: max(14px, 4vw); } }
+
+/* ---- Native content: hidden on any page we've taken over (home tab, Movies/Shows tab, see-all
+   pages). The class goes on before our page is built so the stock content never flashes in. -- */
+
+.sl-takeover > :not(.sl-root) {
+    display: none !important;
+}
+
+/* ---- Header: transparent over the banner, solid once scrolled ----------------------------- */
+
+html.sl-hero-page .skinHeader {
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.5) 55%, rgba(0, 0, 0, 0)) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    transition: background-color 0.4s ease;
+}
+
+html.sl-hero-page.sl-scrolled .skinHeader {
+    background: var(--sl-bg) !important;
+}
+
+/* Library tabs (Movies, Suggestions, Collections...) stay, readable over the banner. */
+html.sl-hero-page:not(.sl-scrolled) .skinHeader .emby-tab-button {
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+/* Jellyfin's second row of tabs (Home/Favorites, Movies/Suggestions/Collections...) is replaced
+   by the nav links and our rows on every page we've taken over. */
+html.sl-active .skinHeader .headerTabs,
+html.sl-route .skinHeader .headerTabs {
+    display: none !important;
+}
+
+/* Same header everywhere: [menu] [logo] [Home  Movies  Shows  Watch List]. Jellyfin's back and home
+   buttons and its page title (the logo on home, the page name elsewhere) make way for our logo,
+   so the links sit in the same spot on every page. Phones keep Jellyfin's header (no links). */
+.sl-logo {
+    display: none;
+}
+
+@media (min-width: 901px) {
+    html.sl-nav-on .skinHeader .headerBackButton,
+    html.sl-nav-on .skinHeader .headerHomeButton,
+    html.sl-nav-on .skinHeader .pageTitle {
+        display: none !important;
+    }
+
+    html.sl-nav-on .skinHeader .sl-logo {
+        display: block;
+        flex: none;
+        width: 7em;
+        height: 2em;
+        margin: 0 0.4em 0 0.2em;
+        padding: 0;
+        border: 0;
+        background-color: transparent;
+        background-position: left center !important;
+        background-repeat: no-repeat;
+        background-size: contain;
+        cursor: pointer;
+    }
+
+    html.sl-nav-on .skinHeader .sl-logo:focus-visible {
+        outline: 2px solid var(--sl-accent);
+        outline-offset: 3px;
+    }
+}
+
+/* Shown on every page, not just home, so the main sections are always one click away. */
+.sl-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.2em;
+    margin-left: 0.8em;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sl-nav-link {
+    background: none;
+    border: 0;
+    color: #e5e5e5;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.92rem;
+    padding: 0.4em 0.6em;
+    border-radius: 4px;
+    transition: color 0.2s ease;
+}
+
+.sl-nav-link:hover {
+    color: #b3b3b3;
+}
+
+.sl-nav-link.is-active {
+    color: #fff;
+    font-weight: 700;
+}
+
+.sl-nav-link:focus-visible {
+    outline: 2px solid var(--sl-accent);
+}
+
+@media (max-width: 900px) {
+    .sl-nav {
+        display: none;
+    }
+}
+
+/* ---- Root ------------------------------------------------------------------------------- */
+
+.sl-root {
+    position: relative;
+    color: var(--sl-text);
+    margin-top: calc(-1 * var(--sl-pull, 0px));
+    overflow-x: clip;
+}
+
+.sl-root.sl-root--no-hero {
+    margin-top: 0;
+}
+
+.sl-root button {
+    font-family: inherit;
+}
+
+/* ---- Hero banner ------------------------------------------------------------------------ */
+
+.sl-hero {
+    position: relative;
+    height: clamp(460px, 56.25vw, 92vh);
+    overflow: hidden;
+    background: #000;
+}
+
+.sl-hero--loading {
+    background: linear-gradient(100deg, #121212 30%, #1c1c1c 50%, #121212 70%) 0 0 / 300% 100%;
+    animation: sl-shimmer 1.6s linear infinite;
+}
+
+.sl-hero-slides {
+    position: absolute;
+    inset: 0;
+}
+
+.sl-hero-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 1s ease, visibility 0s linear 1s;
+}
+
+.sl-hero-slide.is-active {
+    opacity: 1;
+    visibility: visible;
+    z-index: 1;
+    transition: opacity 1s ease, visibility 0s;
+}
+
+.sl-hero-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 20%;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    transform-origin: 70% 40%;
+}
+
+.sl-hero-backdrop.sl-loaded {
+    opacity: 1;
+}
+
+.sl-hero.is-running .sl-hero-slide.is-active .sl-hero-backdrop {
+    animation: sl-kenburns calc(var(--sl-hero-interval, 9s) + 1s) linear forwards;
+}
+
+.sl-hero.is-paused .sl-hero-backdrop {
+    animation-play-state: paused !important;
+}
+
+/* Shade: dark on the left for the text, fading into the page at the bottom. */
+.sl-hero-slide::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(77deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.45) 30%, rgba(0, 0, 0, 0) 62%),
+        linear-gradient(to top, var(--sl-bg) 0%, rgba(16, 16, 16, 0.6) 14%, rgba(16, 16, 16, 0) 34%);
+    pointer-events: none;
+}
+
+.sl-hero-content {
+    position: absolute;
+    z-index: 2;
+    left: var(--sl-gutter);
+    bottom: calc(7vw + 4.5rem);
+    width: min(42%, 640px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.sl-hero-logo {
+    display: block;
+    max-width: min(100%, 480px);
+    max-height: 22vh;
+    object-fit: contain;
+    object-position: left bottom;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.55));
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+
+.sl-hero-logo.sl-loaded {
+    opacity: 1;
+}
+
+.sl-hero-badge {
+    display: inline-block;
+    padding: 0.3em 0.7em;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    color: #fff;
+    font-size: clamp(0.7rem, 0.85vw, 0.85rem);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.sl-hero-title {
+    margin: 0;
+    font-size: clamp(2rem, 4.2vw, 4.4rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+.sl-hero-overview {
+    margin: 0;
+    font-size: clamp(0.95rem, 1.15vw, 1.25rem);
+    line-height: 1.45;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.sl-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 0.3rem;
+}
+
+.sl-hero-slide.is-active .sl-hero-content > * {
+    animation: sl-rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.sl-hero-slide.is-active .sl-hero-content > :nth-child(2) { animation-delay: 0.08s; }
+.sl-hero-slide.is-active .sl-hero-content > :nth-child(3) { animation-delay: 0.16s; }
+.sl-hero-slide.is-active .sl-hero-content > :nth-child(4) { animation-delay: 0.24s; }
+
+.sl-hero-dots {
+    position: absolute;
+    z-index: 3;
+    right: var(--sl-gutter);
+    bottom: calc(7vw + 4.6rem);
+    display: flex;
+    gap: 6px;
+}
+
+.sl-hero-dot {
+    position: relative;
+    width: 26px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+.sl-hero-dot::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 6px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.sl-hero-dot-fill {
+    position: absolute;
+    left: 0;
+    top: 6px;
+    height: 3px;
+    width: 0;
+    border-radius: 2px;
+    background: #fff;
+}
+
+.sl-hero-dot.is-active .sl-hero-dot-fill {
+    width: 100%;
+}
+
+.sl-hero.is-running .sl-hero-dot.is-active .sl-hero-dot-fill {
+    animation: sl-fill var(--sl-hero-interval, 9s) linear both;
+}
+
+.sl-hero.is-paused .sl-hero-dot-fill {
+    animation-play-state: paused !important;
+}
+
+.sl-hero-dot:focus-visible {
+    outline: 2px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-hero-arrow {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    border: 0;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.25s ease, background-color 0.2s ease;
+}
+
+.sl-hero-arrow--prev { left: 1vw; }
+.sl-hero-arrow--next { right: 1vw; }
+
+.sl-hero:hover .sl-hero-arrow,
+.sl-hero-arrow:focus-visible {
+    opacity: 1;
+}
+
+.sl-hero-arrow:hover {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.sl-hero-arrow .material-icons {
+    font-size: 2rem;
+}
+
+@media (hover: none) {
+    .sl-hero-arrow {
+        display: none;
+    }
+}
+
+/* ---- Buttons ---------------------------------------------------------------------------- */
+
+.sl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.6rem 1.6rem 0.6rem 1.2rem;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: clamp(0.95rem, 1.1vw, 1.15rem);
+    font-weight: 700;
+    line-height: 1.2;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.sl-btn:active {
+    transform: scale(0.97);
+}
+
+.sl-btn .material-icons {
+    font-size: 1.6em;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-btn--play {
+    background: #fff;
+    color: #000;
+}
+
+.sl-btn--play:hover {
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.sl-btn--info {
+    background: rgba(109, 109, 110, 0.7);
+    color: #fff;
+}
+
+.sl-btn--info:hover {
+    background: rgba(109, 109, 110, 0.45);
+}
+
+.sl-btn:focus-visible,
+.sl-round:focus-visible {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-round {
+    flex: none;
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background: rgba(42, 42, 42, 0.6);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sl-round:hover {
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sl-round .material-icons {
+    font-size: 1.35rem;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-round--primary {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+}
+
+.sl-round--primary:hover {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.sl-round--hero {
+    width: 2.9rem;
+    height: 2.9rem;
+}
+
+/* ---- Meta line -------------------------------------------------------------------------- */
+
+.sl-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 0.75em;
+    font-size: 0.88rem;
+    color: #e5e5e5;
+}
+
+.sl-meta--hero {
+    font-size: clamp(0.9rem, 1vw, 1.05rem);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.sl-meta-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2em;
+    font-weight: 700;
+    color: #fff;
+}
+
+.sl-meta-rating .material-icons {
+    font-size: 1.1em;
+    min-width: 0;
+    min-height: 0;
+    color: #f5c518;
+}
+
+.sl-meta-critic {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    font-weight: 700;
+    color: #fff;
+}
+
+.sl-tomato {
+    position: relative;
+    width: 0.85em;
+    height: 0.8em;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ff6a3d, #e0280f 70%);
+}
+
+.sl-tomato::after {
+    content: "";
+    position: absolute;
+    top: -0.18em;
+    left: 50%;
+    width: 0.42em;
+    height: 0.22em;
+    margin-left: -0.21em;
+    border-radius: 50% 50% 40% 40%;
+    background: #3fa34d;
+}
+
+.sl-badge {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 3px;
+    padding: 0.05em 0.45em;
+    font-size: 0.85em;
+    line-height: 1.3;
+}
+
+.sl-meta-genres {
+    color: #e5e5e5;
+}
+
+/* ---- Rows ------------------------------------------------------------------------------- */
+
+.sl-rows {
+    position: relative;
+    z-index: 2;
+    margin-top: -7vw;
+    padding-bottom: 2rem;
+}
+
+.sl-root--no-hero .sl-rows {
+    margin-top: 0;
+    padding-top: 1rem;
+}
+
+.sl-slot[hidden] {
+    display: none;
+}
+
+.sl-row {
+    margin-bottom: clamp(1.4rem, 2.6vw, 3rem);
+}
+
+.sl-row-title {
+    margin: 0 var(--sl-gutter) 0.55em;
+    font-size: clamp(1.05rem, 1.35vw, 1.5rem);
+    font-weight: 700;
+    color: #e5e5e5;
+    line-height: 1.2;
+}
+
+.sl-row-viewport {
+    position: relative;
+}
+
+.sl-row-track {
+    display: flex;
+    gap: var(--sl-gap);
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* Room for focus outlines, which overflow-y: hidden would otherwise clip. */
+    padding: 5px var(--sl-gutter);
+    margin: -5px 0;
+    scroll-padding-inline: var(--sl-gutter);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.sl-row-track::-webkit-scrollbar {
+    display: none;
+}
+
+.sl-row-arrow {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    bottom: 0;
+    width: calc(var(--sl-gutter) - 4px);
+    border: 0;
+    padding: 0;
+    background: rgba(16, 16, 16, 0.55);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.sl-row-arrow--prev { left: 0; border-radius: 0 4px 4px 0; }
+.sl-row-arrow--next { right: 0; border-radius: 4px 0 0 4px; }
+
+.sl-row:hover .sl-row-arrow,
+.sl-row-arrow:focus-visible {
+    opacity: 1;
+}
+
+.sl-row-arrow:hover {
+    background: rgba(16, 16, 16, 0.8);
+}
+
+.sl-row-arrow:hover .material-icons {
+    transform: scale(1.25);
+}
+
+.sl-row-arrow .material-icons {
+    font-size: clamp(1.8rem, 2.6vw, 3rem);
+    transition: transform 0.15s ease;
+}
+
+.sl-row-arrow[hidden] {
+    display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .sl-row-arrow {
+        display: none;
+    }
+}
+
+/* ---- Cards ------------------------------------------------------------------------------ */
+
+.sl-card {
+    position: relative;
+    flex: 0 0 auto;
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sl-card--landscape {
+    width: calc((100% - (var(--sl-landscape-n) - 1) * var(--sl-gap)) / var(--sl-landscape-n));
+}
+
+.sl-card--poster {
+    width: calc((100% - (var(--sl-poster-n) - 1) * var(--sl-gap)) / var(--sl-poster-n));
+}
+
+.sl-card-media {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #232323;
+    transition: filter 0.2s ease;
+}
+
+.sl-card--poster .sl-card-media,
+.sl-card--top10 .sl-card-media {
+    aspect-ratio: 2 / 3;
+}
+
+.sl-card:hover .sl-card-media {
+    filter: brightness(1.12);
+}
+
+.sl-card:focus-visible .sl-card-media {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-card-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+
+.sl-card-img.sl-loaded {
+    opacity: 1;
+}
+
+.sl-card--landscape .sl-card-media::after,
+.sl-preview-media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 55%);
+    pointer-events: none;
+}
+
+.sl-card-treatment {
+    position: absolute;
+    z-index: 1;
+    left: 7%;
+    right: 7%;
+    bottom: 9%;
+    top: 45%;
+    display: flex;
+    align-items: flex-end;
+    pointer-events: none;
+}
+
+.sl-card-logo {
+    display: block;
+    max-width: 68%;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: left bottom;
+    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.65));
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+
+.sl-card-logo.sl-loaded {
+    opacity: 1;
+}
+
+.sl-card-name {
+    font-weight: 800;
+    font-size: clamp(0.85rem, 1.05vw, 1.15rem);
+    line-height: 1.15;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.sl-card-name--center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0.6em;
+}
+
+.sl-card-play {
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    left: 50%;
+    width: 3rem;
+    height: 3rem;
+    margin: -1.5rem 0 0 -1.5rem;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.sl-card-play .material-icons {
+    font-size: 1.9rem;
+}
+
+.sl-card:hover .sl-card-play,
+.sl-card:focus-visible .sl-card-play {
+    opacity: 1;
+    transform: scale(1);
+}
+
+@media (hover: none) {
+    .sl-card-play {
+        opacity: 0.9;
+        transform: scale(0.8);
+    }
+}
+
+.sl-progress {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.sl-progress > span {
+    display: block;
+    height: 100%;
+    background: var(--sl-accent);
+}
+
+.sl-progress--inline {
+    position: relative;
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.sl-card-caption {
+    margin-top: 0.45em;
+    font-size: 0.85rem;
+    color: var(--sl-text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---- Hover preview ---------------------------------------------------------------------- */
+
+.sl-preview {
+    position: absolute;
+    z-index: 1000;
+    background: var(--sl-surface);
+    color: var(--sl-text);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.75);
+    opacity: 0;
+    transform: scale(0.67);
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.18s ease;
+}
+
+.sl-preview.is-open {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.sl-preview-media {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: #232323;
+    cursor: pointer;
+    color: inherit;
+}
+
+.sl-preview-media:focus-visible {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: -3px;
+}
+
+.sl-preview-body {
+    padding: 0.9rem 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.sl-preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sl-spacer {
+    flex: 1;
+}
+
+.sl-preview-episode {
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+
+.sl-preview-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--sl-text-dim);
+}
+
+.sl-preview-genres {
+    font-size: 0.85rem;
+    color: #e5e5e5;
+}
+
+/* ---- Loading skeletons ------------------------------------------------------------------ */
+
+.sl-row--loading .sl-row-track {
+    overflow: hidden;
+}
+
+.sl-skeleton {
+    background: linear-gradient(100deg, #1a1a1a 30%, #262626 50%, #1a1a1a 70%) 0 0 / 300% 100%;
+    animation: sl-shimmer 1.6s linear infinite;
+    border-radius: 6px;
+}
+
+.sl-skeleton--title {
+    width: 12rem;
+    max-width: 40%;
+    height: 1.2rem;
+    margin: 0 var(--sl-gutter) 0.8rem;
+}
+
+.sl-skeleton--card {
+    flex: 0 0 auto;
+    width: calc((100% - (var(--sl-landscape-n) - 1) * var(--sl-gap)) / var(--sl-landscape-n));
+    aspect-ratio: 16 / 9;
+}
+
+/* ---- Row titles that open their "see all" page, and the last "See all" card ------------- */
+
+.sl-row-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.6em;
+    color: inherit;
+    text-decoration: none;
+}
+
+.sl-row-explore {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.62em;
+    font-weight: 700;
+    color: var(--sl-accent);
+    opacity: 0;
+    transform: translateX(-8px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.sl-row-explore .material-icons {
+    font-size: 1.3em;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-row:hover .sl-row-explore,
+.sl-row-link:focus-visible .sl-row-explore {
+    opacity: 1;
+    transform: none;
+}
+
+.sl-row-link:focus-visible {
+    outline: 2px solid var(--sl-accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+
+@media (hover: none) {
+    .sl-row-explore {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.sl-card--more .sl-card-media {
+    background: linear-gradient(135deg, #262626, #171717);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sl-more-inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25em;
+    padding: 0.6em;
+    text-align: center;
+}
+
+.sl-more-inner .material-icons {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 0.3em;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.sl-card--more:hover .sl-more-inner .material-icons,
+.sl-card--more:focus-visible .sl-more-inner .material-icons {
+    transform: translateX(4px);
+    border-color: #fff;
+}
+
+.sl-more-label {
+    font-weight: 800;
+    font-size: clamp(0.9rem, 1.1vw, 1.1rem);
+}
+
+.sl-more-title {
+    font-size: 0.8rem;
+    color: var(--sl-text-dim);
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sl-card-badge {
+    position: absolute;
+    z-index: 2;
+    top: 8px;
+    left: 8px;
+    padding: 0.2em 0.55em;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--sl-accent) 82%, #000);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- "See all" pages ------------------------------------------------------------------- */
+
+.sl-root--browse {
+    padding: 1.5rem 0 0;
+}
+
+.sl-browse-head {
+    padding: 0 var(--sl-gutter) 1.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.4rem 1.5rem;
+}
+
+.sl-browse-title {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: clamp(1.8rem, 3.4vw, 3.2rem);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+}
+
+.sl-browse-subtitle {
+    margin: 0;
+    color: var(--sl-text-dim);
+    font-size: 0.95rem;
+}
+
+.sl-sort {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-left: auto;
+}
+
+.sl-sort-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.sl-sort-direction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.4em 0.9em 0.4em 0.6em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sl-sort-direction:hover {
+    border-color: #fff;
+}
+
+.sl-sort-direction:focus-visible {
+    outline: 2px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-sort-direction .material-icons {
+    font-size: 1.2rem;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-sort-chip {
+    padding: 0.4em 1em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    background: transparent;
+    color: #e5e5e5;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.sl-sort-chip:hover {
+    border-color: #fff;
+}
+
+.sl-sort-chip.is-on {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+    font-weight: 700;
+}
+
+.sl-sort-chip:focus-visible {
+    outline: 2px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 19vw, 320px), 1fr));
+    gap: clamp(8px, 0.8vw, 14px);
+    row-gap: clamp(14px, 1.6vw, 26px);
+    padding: 0 var(--sl-gutter);
+}
+
+.sl-grid .sl-card {
+    width: auto;
+}
+
+.sl-skeleton--grid {
+    aspect-ratio: 16 / 9;
+}
+
+.sl-grid-sentinel {
+    height: 1px;
+}
+
+.sl-empty {
+    padding: 2rem var(--sl-gutter);
+    color: var(--sl-text-dim);
+}
+
+/* All Genres: poster-shaped tiles with a 2x2 collage of what's inside. */
+.sl-genre-section {
+    margin-bottom: clamp(1.4rem, 2.6vw, 3rem);
+}
+
+.sl-genre-grid--headline {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(170px, 15.5vw, 260px), 1fr));
+}
+
+.sl-genre-grid--headline .sl-genre-name {
+    font-size: clamp(1.25rem, 1.8vw, 1.9rem);
+}
+
+.sl-genre-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(clamp(130px, 12vw, 200px), 1fr));
+    gap: clamp(10px, 1vw, 18px);
+    padding: 0 var(--sl-gutter);
+}
+
+.sl-skeleton--tile {
+    aspect-ratio: 2 / 3;
+}
+
+.sl-genre-tile {
+    position: relative;
+    display: block;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #2a2a2a, #161616);
+    color: #fff;
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sl-genre-tile:hover,
+.sl-genre-tile:focus-visible {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+}
+
+.sl-genre-tile:focus-visible {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: 2px;
+}
+
+.sl-genre-mosaic {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 2px;
+}
+
+.sl-genre-mosaic--1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.sl-genre-mosaic--2 { grid-template-rows: 1fr; }
+.sl-genre-mosaic--3 > :first-child { grid-row: span 2; }
+
+.sl-genre-poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.5s ease;
+}
+
+.sl-genre-poster.sl-loaded {
+    opacity: 1;
+}
+
+.sl-genre-tile:hover .sl-genre-poster {
+    transform: scale(1.04);
+}
+
+.sl-genre-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.55) 35%, rgba(0, 0, 0, 0.05) 70%);
+}
+
+.sl-genre-text {
+    position: absolute;
+    z-index: 1;
+    left: 0.8em;
+    right: 0.8em;
+    bottom: 0.8em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+}
+
+.sl-genre-name {
+    font-size: clamp(1rem, 1.3vw, 1.35rem);
+    font-weight: 800;
+    line-height: 1.15;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.sl-genre-count {
+    font-size: 0.8rem;
+    color: #cfcfcf;
+}
+
+.sl-list-slot {
+    width: 2.3rem;
+    height: 2.3rem;
+}
+
+@media (max-width: 640px) {
+    .sl-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .sl-skeleton--grid {
+        aspect-ratio: 2 / 3;
+    }
+
+    .sl-sort {
+        margin-left: 0;
+    }
+}
+
+/* ---- Ratings ------------------------------------------------------------------------- */
+
+.sl-rate {
+    position: relative;
+    display: inline-flex;
+}
+
+.sl-rate-btn.is-on,
+.sl-round.sl-rate-btn.is-on {
+    border-color: var(--sl-rate-color);
+    color: var(--sl-rate-color);
+}
+
+.sl-rate-pop {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem 0.6rem 0.35rem;
+    border-radius: 999px;
+    background: rgba(24, 24, 24, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    animation: sl-pop 0.16s ease-out both;
+}
+
+.sl-rate-options {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.sl-rate-option {
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--sl-rate-color);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.sl-rate-option .material-icons {
+    font-size: 1.5rem;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-rate-option:hover,
+.sl-rate-option:focus-visible {
+    transform: scale(1.18);
+    background: rgba(255, 255, 255, 0.14);
+    outline: none;
+}
+
+.sl-rate-option.is-on {
+    border-color: var(--sl-rate-color);
+    background: color-mix(in srgb, var(--sl-rate-color) 22%, transparent);
+}
+
+.sl-rate-caption {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #e5e5e5;
+    margin-top: 0.2rem;
+    white-space: nowrap;
+}
+
+@keyframes sl-pop {
+    from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.92); }
+    to { opacity: 1; transform: translateX(-50%); }
+}
+
+/* ---- Favorites (heart) and Watch List (+) buttons outside our rows ------------------------- */
+
+.sl-fav-btn.is-on {
+    color: #ff4d6a;
+    border-color: #ff4d6a;
+}
+
+/* Item pages: Jellyfin's buttons get the same round look as ours, and its own watched check and
+   heart make way for ours, so there aren't two check marks next to each other. */
+.sl-detail-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.sl-detail-buttons .btnPlaystate,
+.sl-detail-buttons .btnUserRating,
+.sl-detail-buttons .btnShuffle,
+.sl-detail-buttons.sl-has-trailer .btnPlayTrailer {
+    display: none !important;
+}
+
+.sl-detail-buttons > .detailButton {
+    width: 2.9rem;
+    height: 2.9rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background: rgba(42, 42, 42, 0.6);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sl-detail-buttons > .detailButton:hover {
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sl-detail-buttons > .detailButton .detailButton-text {
+    display: none;
+}
+
+.sl-detail-buttons > .detailButton .detailButton-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sl-detail-buttons > .detailButton .material-icons {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+/* Play / resume: the white one, as on the banner and in previews. */
+.sl-detail-buttons > .btnPlay,
+.sl-detail-buttons > .btnResume {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+}
+
+.sl-detail-buttons > .btnPlay:hover,
+.sl-detail-buttons > .btnResume:hover {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.sl-detail-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+
+.sl-trailer-external {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    margin-top: 0.7rem;
+    color: var(--sl-text-dim);
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.sl-trailer-external:hover {
+    color: #fff;
+}
+
+.sl-trailer-external .material-icons {
+    font-size: 1.1em;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* ---- Item pages: less clutter ----------------------------------------------------------
+   The wall of TMDb keywords (they drive the genre rows instead) and the audio/subtitle track
+   pickers go; tracks can still be switched in the player, and the file details are under
+   the ⋯ menu ("Media Info"). */
+html.sl-nav-on .itemDetailPage .itemTags,
+html.sl-nav-on .itemDetailPage form.trackSelections {
+    display: none !important;
+}
+
+/* "Rate" in the rating button, until it's been used once. */
+.sl-rate-hint {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1;
+}
+
+/* ---- Trailer on item pages ------------------------------------------------------------- */
+
+.sl-trailer {
+    max-width: 1100px;
+}
+
+.sl-trailer-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.2rem;
+    margin-bottom: 0.8rem;
+}
+
+.sl-trailer-title {
+    margin: 0;
+}
+
+.sl-trailer-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.sl-trailer-frame {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.sl-trailer-facade {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: #000;
+    cursor: pointer;
+}
+
+.sl-trailer-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.85;
+    transition: opacity 0.2s ease, transform 0.4s ease;
+}
+
+.sl-trailer-facade:hover .sl-trailer-thumb,
+.sl-trailer-facade:focus-visible .sl-trailer-thumb {
+    opacity: 1;
+    transform: scale(1.02);
+}
+
+.sl-trailer-facade:focus-visible {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: -3px;
+}
+
+.sl-trailer-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4.5rem;
+    height: 4.5rem;
+    margin: -2.25rem 0 0 -2.25rem;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    border: 3px solid #fff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.sl-trailer-play .material-icons {
+    font-size: 2.8rem;
+}
+
+.sl-trailer-facade:hover .sl-trailer-play {
+    transform: scale(1.08);
+    background: rgba(0, 0, 0, 0.75);
+}
+
+.sl-trailer-iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+/* ---- Phone tab bar -------------------------------------------------------------------- */
+
+.sl-tabbar {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    html.sl-nav-on .sl-tabbar {
+        display: flex;
+        position: fixed;
+        z-index: 1001;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(58px + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        background: rgba(16, 16, 16, 0.97);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+    }
+
+    html.sl-nav-on body {
+        padding-bottom: calc(58px + env(safe-area-inset-bottom));
+    }
+
+    /* Jellyfin's own mini player sits above the tab bar, not under it. */
+    html.sl-nav-on .nowPlayingBar {
+        bottom: calc(58px + env(safe-area-inset-bottom)) !important;
+    }
+}
+
+.sl-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #9a9a9a;
+    font: inherit;
+    font-size: 0.66rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sl-tab .material-icons {
+    font-size: 1.5rem;
+    min-width: 0;
+    min-height: 0;
+}
+
+.sl-tab.is-active {
+    color: #fff;
+    font-weight: 700;
+}
+
+.sl-tab.is-active .material-icons {
+    color: var(--sl-accent);
+}
+
+.sl-tab:focus-visible {
+    outline: 2px solid var(--sl-accent);
+    outline-offset: -4px;
+}
+
+/* ---- Search ---------------------------------------------------------------------------- */
+
+.sl-search-head {
+    padding: 0.5rem var(--sl-gutter) 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.sl-search-field {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 1.1rem;
+    height: 3.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.sl-search-field:focus-within {
+    border-color: var(--sl-accent);
+    background: rgba(255, 255, 255, 0.11);
+}
+
+.sl-search-field .material-icons {
+    color: var(--sl-text-dim);
+    font-size: 1.6rem;
+}
+
+.sl-search-input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-size: clamp(1.05rem, 1.4vw, 1.35rem);
+}
+
+.sl-search-input::placeholder {
+    color: #8a8a8a;
+}
+
+.sl-search-genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.sl-sort-chip--more {
+    border-style: dashed;
+}
+
+.sl-search-block {
+    margin-bottom: 2rem;
+}
+
+.sl-search-heading {
+    margin-bottom: 0.8rem;
+}
+
+.sl-people {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    padding: 0 var(--sl-gutter);
+}
+
+.sl-person {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 1rem 0.3rem 0.3rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+.sl-person:hover {
+    border-color: #fff;
+}
+
+.sl-person-face {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #2a2a2a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sl-person-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sl-person-img.sl-loaded {
+    opacity: 1;
+}
+
+/* Coming Soon: the date is the tag, in white so it reads as "when", not "new". */
+.sl-card-badge--date {
+    background: rgba(255, 255, 255, 0.92);
+    color: #111;
+}
+
+/* ---- Phone preview (testing aid) ------------------------------------------------------- */
+
+.sl-phone-toggle {
+    position: fixed;
+    z-index: 2001;
+    left: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.55em 1em 0.55em 0.8em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: rgba(24, 24, 24, 0.95);
+    color: #fff;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.sl-phone-toggle .material-icons {
+    font-size: 1.2rem;
+    min-width: 0;
+    min-height: 0;
+    color: var(--sl-accent);
+}
+
+.sl-phone-preview {
+    position: fixed;
+    z-index: 2000;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.sl-phone-frame {
+    width: 412px;
+    height: min(915px, calc(100vh - 40px));
+    padding: 12px;
+    border-radius: 44px;
+    background: #050505;
+    border: 2px solid #333;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+
+.sl-phone-screen {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 32px;
+    background: #101010;
+}
+
+@media (max-width: 900px) {
+    .sl-phone-toggle {
+        display: none;
+    }
+}
+
+/* ---- Browse tiles ----------------------------------------------------------------------- */
+
+.sl-browse {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    grid-auto-flow: column;
+    gap: clamp(10px, 1.2vw, 20px);
+    padding: 0.5rem var(--sl-gutter) 1rem;
+}
+
+.sl-browse-tile {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 21 / 9;
+    min-height: 120px;
+    border: 0;
+    border-radius: 10px;
+    padding: 0;
+    background: linear-gradient(135deg, #2a2a2a, #161616);
+    color: #fff;
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.sl-browse-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.6s ease;
+}
+
+.sl-browse-img.sl-loaded {
+    opacity: 1;
+}
+
+.sl-browse-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 55%, rgba(0, 0, 0, 0.15) 100%);
+    transition: background-color 0.3s ease;
+}
+
+.sl-browse-tile:hover .sl-browse-img,
+.sl-browse-tile:focus-visible .sl-browse-img {
+    transform: scale(1.05);
+}
+
+.sl-browse-tile:focus-visible {
+    outline: 3px solid var(--sl-accent);
+    outline-offset: 3px;
+}
+
+.sl-browse-text {
+    position: absolute;
+    z-index: 1;
+    left: clamp(16px, 2.2vw, 40px);
+    bottom: clamp(14px, 2vw, 34px);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+}
+
+.sl-browse-label {
+    font-size: clamp(1.5rem, 3.2vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+
+.sl-browse-sub {
+    font-size: clamp(0.8rem, 1vw, 1rem);
+    color: #d0d0d0;
+}
+
+.sl-browse-tile > .material-icons {
+    position: absolute;
+    z-index: 1;
+    right: clamp(14px, 2vw, 34px);
+    bottom: clamp(14px, 2vw, 34px);
+    font-size: clamp(1.6rem, 2.4vw, 2.4rem);
+    transition: transform 0.25s ease;
+}
+
+.sl-browse-tile:hover > .material-icons {
+    transform: translateX(6px);
+}
+
+@media (max-width: 640px) {
+    .sl-browse-tile {
+        aspect-ratio: 4 / 3;
+    }
+}
+
+/* ---- Footer & classic toggle ------------------------------------------------------------ */
+
+.sl-footer {
+    display: flex;
+    justify-content: center;
+    padding: 1rem var(--sl-gutter) 3rem;
+}
+
+/* ---- Phones ----------------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+    /* About 60% of the screen, so the first row (Continue Watching) shows without scrolling. */
+    .sl-hero {
+        height: clamp(380px, 60vh, 520px);
+    }
+
+    .sl-hero-slide::after {
+        background:
+            linear-gradient(to top, var(--sl-bg) 0%, rgba(16, 16, 16, 0.85) 22%, rgba(16, 16, 16, 0) 55%),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 25%);
+    }
+
+    .sl-hero-backdrop {
+        object-position: center top;
+    }
+
+    .sl-hero-content {
+        left: var(--sl-gutter);
+        right: var(--sl-gutter);
+        bottom: 3.2rem;
+        width: auto;
+        align-items: center;
+        text-align: center;
+        gap: 0.75rem;
+    }
+
+    .sl-hero-logo {
+        max-width: 78%;
+        max-height: 16vh;
+        object-position: center bottom;
+    }
+
+    .sl-hero-overview {
+        display: none;
+    }
+
+    .sl-meta--hero {
+        justify-content: center;
+    }
+
+    .sl-hero-actions {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .sl-hero-actions .sl-btn {
+        flex: 1;
+        max-width: 11rem;
+        justify-content: center;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .sl-hero-dots {
+        left: 0;
+        right: 0;
+        bottom: 1rem;
+        justify-content: center;
+    }
+
+    .sl-rows {
+        margin-top: 0.5rem;
+    }
+
+    .sl-card-caption {
+        font-size: 0.78rem;
+    }
+
+    /* Tags must fit a phone-sized poster ("RECENTLY ADDED" was cut off). */
+    .sl-card-badge {
+        top: 5px;
+        left: 5px;
+        max-width: calc(100% - 10px);
+        padding: 0.15em 0.4em;
+        font-size: 0.55rem;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Banner: "More info" becomes a round info button so Play, info, +, heart and rating fit
+       one line. */
+    .sl-hero-actions .sl-btn--play {
+        flex: 1;
+        max-width: none;
+    }
+
+    .sl-hero-actions .sl-btn--info {
+        flex: none;
+        width: 2.9rem;
+        height: 2.9rem;
+        padding: 0;
+        border-radius: 50%;
+        justify-content: center;
+    }
+
+    .sl-hero-actions .sl-btn--info span:not(.material-icons) {
+        display: none;
+    }
+
+    /* Item pages: the title and year get the full width, the buttons their own line below. */
+    html.sl-nav-on .itemDetailPage .detailRibbon {
+        flex-wrap: wrap;
+        height: auto;
+    }
+
+    html.sl-nav-on .itemDetailPage .detailRibbon .infoWrapper {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    html.sl-nav-on .itemDetailPage .detailRibbon .sl-detail-buttons {
+        flex: 1 1 100%;
+        justify-content: flex-start;
+        margin: 0.5rem 0 0.7rem;
+    }
+
+    /* Page names next to the menu button don't fit beside the icons on a phone ("Sea…"); the
+       tab bar already says where you are. Home keeps its logo. */
+    html.sl-route .skinHeader .pageTitle:not(.pageTitleWithDefaultLogo) {
+        display: none;
+    }
+
+    .sl-root--search {
+        margin-top: -1.5rem;
+    }
+
+    /* Item pages: the round buttons fit one line. */
+    .sl-detail-buttons,
+    .sl-detail-group {
+        gap: 0.35rem;
+    }
+
+    .sl-detail-buttons > .detailButton,
+    .sl-detail-buttons .sl-round {
+        width: 2.3rem;
+        height: 2.3rem;
+    }
+
+    .sl-detail-buttons > .detailButton .material-icons,
+    .sl-detail-buttons .sl-round .material-icons {
+        font-size: 1.2rem;
+    }
+}
+
+/* ---- Motion ----------------------------------------------------------------------------- */
+
+@keyframes sl-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: 0 0; }
+}
+
+@keyframes sl-kenburns {
+    from { transform: scale(1); }
+    to { transform: scale(1.07); }
+}
+
+@keyframes sl-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes sl-fill {
+    from { width: 0; }
+    to { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sl-hero-slide,
+    .sl-hero-slide.is-active,
+    .sl-preview,
+    .sl-card-img,
+    .sl-hero-backdrop {
+        transition: none !important;
+    }
+
+    .sl-hero-backdrop,
+    .sl-hero-content > *,
+    .sl-skeleton,
+    .sl-hero--loading {
+        animation: none !important;
+    }
+}
+
+/* ---- Collections and genres in search ---------------------------------------------------- */
+
+/* A short run of smaller tiles, so the titles below stay in view. */
+.sl-search-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(clamp(110px, 9vw, 150px), 1fr));
+}
+
+/* Six tabs on a phone: labels a little smaller so "Collections" fits. */
+@media (max-width: 420px) {
+    .sl-tab-label {
+        font-size: 0.6rem;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+    }
+}
+
+.sl-collection-heading {
+    margin-bottom: 0.8rem;
+}
+
+/* ---- Home: two by two browse tiles ---------------------------------------------------------- */
+
+.sl-browse--quad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+}
+
+/* ---- Home: Collections row (poster tiles) ---------------------------------------------------- */
+
+.sl-card--collection .sl-genre-tile {
+    box-shadow: none;
+}
+
+.sl-card--collection .sl-genre-name {
+    font-size: clamp(0.95rem, 1.2vw, 1.25rem);
+    /* Rows don't wrap their text; these names may take two lines. */
+    white-space: normal;
+}
+
+/* ---- Item pages: "Part of" links --------------------------------------------------------------- */
+
+.sl-partof {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.5em;
+    margin: 0.9em 0 1.2em;
+}
+
+.sl-partof-label {
+    color: var(--sl-text-dim);
+    font-size: 0.9em;
+    margin-right: 0.2em;
+}
+
+.sl-partof-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3em 0.85em;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.9em;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sl-partof-link:hover,
+.sl-partof-link:focus-visible {
+    border-color: var(--sl-accent);
+    background: color-mix(in srgb, var(--sl-accent) 22%, transparent);
+    outline: none;
+}
+
+/* ---- Side menu: admins only, with just Dashboard and Metadata Manager ----------------------- */
+
+/* The admin dashboard keeps its own menu as it is. */
+html.sl-nav-on:not(.sl-admin) body:not(.dashboardDocument) .mainDrawerButton,
+html.sl-nav-on:not(.sl-admin) body:not(.dashboardDocument) .mainDrawer,
+html.sl-nav-on:not(.sl-admin) body:not(.dashboardDocument) .mainDrawerHandle {
+    display: none !important;
+}
+
+html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .navMenuOption:not(.lnkManageServer):not(.editorViewMenu),
+html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader {
+    display: none !important;
+}
+
+/* ---- Person icon menu ---------------------------------------------------------------------- */
+
+.sl-usermenu {
+    position: fixed;
+    z-index: 1100;
+    min-width: 190px;
+    padding: 6px;
+    border-radius: 10px;
+    background: #1e1e1e;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+    color: #fff;
+}
+
+.sl-usermenu-name {
+    padding: 8px 12px 6px;
+    color: var(--sl-text-dim);
+    font-size: 0.85rem;
+}
+
+.sl-usermenu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sl-usermenu-item:hover,
+.sl-usermenu-item:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
+.sl-usermenu-item .material-icons {
+    font-size: 1.25rem;
+    color: var(--sl-text-dim);
+}
