@@ -34,6 +34,7 @@ public sealed class StreamlineController : ControllerBase
     private readonly SeerrService _seerr;
     private readonly ComingSoonService _comingSoon;
     private readonly CollectionService _collections;
+    private readonly GenreTasteService _genreTaste;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamlineController"/> class.
@@ -48,6 +49,7 @@ public sealed class StreamlineController : ControllerBase
     /// <param name="seerr">Seerr request sync.</param>
     /// <param name="comingSoon">The Coming Soon row.</param>
     /// <param name="collections">The Collections page.</param>
+    /// <param name="genreTaste">Genre-row order and choices.</param>
     public StreamlineController(
         IUserManager userManager,
         ILibraryManager libraryManager,
@@ -58,8 +60,10 @@ public sealed class StreamlineController : ControllerBase
         IdentityService identity,
         SeerrService seerr,
         ComingSoonService comingSoon,
-        CollectionService collections)
+        CollectionService collections,
+        GenreTasteService genreTaste)
     {
+        _genreTaste = genreTaste;
         _collections = collections;
         _comingSoon = comingSoon;
         _trailerFinder = trailerFinder;
@@ -319,6 +323,40 @@ public sealed class StreamlineController : ControllerBase
         return user is null
             ? Unauthorized()
             : Ok(_collections.Get(user).Where(entry => entry.ItemIds.Contains(itemId)).Select(entry => new { entry.Id, entry.Name, entry.Kind }).ToList());
+    }
+
+    /// <summary>
+    /// Gets the signed-in user's taste: the titles that count for the order of their genre rows.
+    /// </summary>
+    [HttpGet("Taste")]
+    [Authorize]
+    public ActionResult<IReadOnlyList<TasteEntry>> GetTaste()
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_genreTaste.GetTaste(user));
+    }
+
+    /// <summary>
+    /// Gets the signed-in user's own genre-row choices.
+    /// </summary>
+    [HttpGet("GenrePrefs")]
+    [Authorize]
+    public ActionResult<GenrePrefs> GetGenrePrefs()
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_genreTaste.GetPrefs(user.Id));
+    }
+
+    /// <summary>
+    /// Saves the signed-in user's own genre-row choices.
+    /// </summary>
+    /// <param name="prefs">Pinned and hidden genres, and whether rows follow what they watch.</param>
+    [HttpPost("GenrePrefs")]
+    [Authorize]
+    public ActionResult<GenrePrefs> SaveGenrePrefs([FromBody] GenrePrefs prefs)
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_genreTaste.SavePrefs(user.Id, prefs ?? new GenrePrefs()));
     }
 
     /// <summary>

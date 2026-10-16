@@ -8,31 +8,34 @@ using MediaBrowser.Model.Tasks;
 namespace Jellyfin.Plugin.Streamline.ScheduledTasks;
 
 /// <summary>
-/// Nightly: prepares the Collections page for everyone in one go (every movie's directors and
+/// Nightly: prepares the Collections page and everyone's genre taste in one go (every movie's directors and
 /// writers looked up again), after the nightly metadata and title fixes, so nobody waits for
 /// it during the day.
 /// </summary>
 public sealed class CollectionsTask : IScheduledTask
 {
     private readonly CollectionService _collections;
+    private readonly GenreTasteService _taste;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CollectionsTask"/> class.
     /// </summary>
     /// <param name="collections">The collections.</param>
-    public CollectionsTask(CollectionService collections)
+    /// <param name="taste">Everyone's genre taste.</param>
+    public CollectionsTask(CollectionService collections, GenreTasteService taste)
     {
         _collections = collections;
+        _taste = taste;
     }
 
     /// <inheritdoc />
-    public string Name => "Prepare collections";
+    public string Name => "Prepare collections and genre rows";
 
     /// <inheritdoc />
     public string Key => "Jellyfin.Plugin.Streamline.Collections";
 
     /// <inheritdoc />
-    public string Description => "Works out every collection (franchises, movie series, themes, decades, directors) for the Collections page, so it's ready before anyone opens it.";
+    public string Description => "Works out every collection (franchises, movie series, themes, decades, directors) for the Collections page, and everyone's genre taste for the order of their genre rows, so it's ready before anyone opens it.";
 
     /// <inheritdoc />
     public string Category => "Streamline";
@@ -41,6 +44,8 @@ public sealed class CollectionsTask : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         await _collections.RebuildAsync(true, cancellationToken).ConfigureAwait(false);
+        progress.Report(60);
+        _taste.RebuildAll();
         progress.Report(100);
     }
 

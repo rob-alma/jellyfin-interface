@@ -948,6 +948,79 @@
         return Array.from(names.values());
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Genre rows per person: in the order of what they watch (their taste, worked out by the
+    // server from what they watched, favorited and rated), with their own pinned genres first
+    // and hidden ones left out. Without any history: the order set by the admin.
+    // ---------------------------------------------------------------------------------------
+
+    function loadGenrePrefs() {
+        return cached("genre-prefs", STABLE_ROW_TTL_MS, async () => Object.assign({ Auto: true, Pinned: [], Hidden: [] }, await getJson("Streamline/GenrePrefs").catch(() => null)));
+    }
+
+    function loadTaste() {
+        return cached("taste", STABLE_ROW_TTL_MS, async () => {
+            const entries = (await getJson("Streamline/Taste").catch(() => [])) || [];
+            const weights = new Map(entries.map((entry) => [normalizeIds([entry.Id])[0], entry.Weight]));
+            const ids = Array.from(weights.keys());
+            const items = [];
+            for (let i = 0; i < ids.length; i += 50) {
+                items.push(...await itemsByIds(ids.slice(i, i + 50), `${ITEM_FIELDS},Tags`).catch(() => []));
+            }
+            return items.map((item) => ({ item, weight: weights.get(normalizeIds([item.Id])[0]) || 0 }));
+        });
+    }
+
+    // Every genre a page could have a row for, for ordering and for the Customize list.
+    async function genreCandidates(scope) {
+        const names = new Map();
+        const add = (name) => name && !names.has(name.toLowerCase()) && names.set(name.toLowerCase(), name);
+        mainGenres().forEach(add);
+        String(state.config.HeadlineGenres || "").split(",").map((name) => name.trim()).forEach(add);
+        (await libraryGenreNames(scope).catch(() => [])).forEach(add);
+        if (scope.types === "Series") {
+            add("Anime");
+        }
+        return Array.from(names.values());
+    }
+
+    // How much a person watches a genre on this page (movies on Movies, shows on Shows).
+    function genreScore(scope, taste, name) {
+        const types = scope.types.split(",");
+        const def = name === "Anime" ? ANIME : null;
+        return taste.reduce((sum, entry) => {
+            if (!types.includes(entry.item.Type)) {
+                return sum;
+            }
+            const hit = def ? (entry.item.Tags || []).some((tag) => def.tags.includes(tag.toLowerCase())) : matchesGenre(entry.item, name);
+            return hit ? sum + entry.weight : sum;
+        }, 0);
+    }
+
+    // The genre rows for a page, in order.
+    async function genreRowNames(scope) {
+        const base = mainGenres();
+        const [prefs, taste, candidates] = await Promise.all([loadGenrePrefs(), loadTaste().catch(() => []), genreCandidates(scope)]);
+        const lower = (list) => new Set((list || []).map((name) => name.toLowerCase()));
+        const hidden = lower(prefs.Hidden);
+        const pinned = (prefs.Pinned || []).filter((name) => !hidden.has(name.toLowerCase()) && candidates.some((other) => other.toLowerCase() === name.toLowerCase()));
+        const pinnedSet = lower(pinned);
+        const count = Math.max(base.length, pinned.length);
+
+        let rest = base.filter((name) => !hidden.has(name.toLowerCase()) && !pinnedSet.has(name.toLowerCase()));
+        if (prefs.Auto !== false && taste.length) {
+            // What they watch most first (any genre here, not just the admin's list), then the
+            // admin's list for the rest; genres they rated down sink.
+            const scored = candidates
+                .filter((name) => !hidden.has(name.toLowerCase()) && !pinnedSet.has(name.toLowerCase()))
+                .map((name) => ({ name, score: genreScore(scope, taste, name) }));
+            const liked = scored.filter((entry) => entry.score > 0).sort((x, y) => y.score - x.score).map((entry) => entry.name);
+            const disliked = new Set(scored.filter((entry) => entry.score < 0).map((entry) => entry.name.toLowerCase()));
+            rest = liked.concat(rest.filter((name) => !liked.includes(name) && !disliked.has(name.toLowerCase())), rest.filter((name) => disliked.has(name.toLowerCase())));
+        }
+        return pinned.concat(rest).slice(0, count);
+    }
+
     function mainGenres() {
         return String((state.config && state.config.GenreRows) || "")
             .split(",")
@@ -991,9 +1064,10 @@
         return entries.sort((x, y) => y.date - x.date).slice(0, max).map((entry) => entry.item);
     }
 
-    async function genreRow(scope, name) {
+    // A row needs a few titles to be worth showing; one the person pinned shows from one.
+    async function genreRow(scope, name, min = 4) {
         const items = await genreItems(scope, name, { SortBy: "Random" }, limit());
-        if (items.length < 4) {
+        if (items.length < min) {
             return [];
         }
         return [{
@@ -1063,9 +1137,9 @@
         });
     }
 
-    async function subgenreRow(scope, def) {
+    async function subgenreRow(scope, def, min = 4) {
         const items = await subgenreItems(scope, def, 500);
-        if (items.length < 4) {
+        if (items.length < min) {
             return [];
         }
         return [{
@@ -1249,15 +1323,25 @@
         },
 
         async genres(scope) {
-            // Shows also get Anime, right under Action (it's a keyword, not a Jellyfin genre).
-            const names = mainGenres();
-            const loaders = names.map((name) => () => genreRow(scope, name));
-            if (scope.types === "Series") {
+            // In this person's order (their pins, then what they watch most).
+            const names = await genreRowNames(scope);
+            const prefs = await loadGenrePrefs();
+            const pinned = new Set((prefs.Pinned || []).map((name) => name.toLowerCase()));
+            const loaders = names.map((name) => {
+                const min = pinned.has(name.toLowerCase()) ? 1 : 4;
+                return () => (name === "Anime" ? subgenreRow(scope, ANIME, min) : genreRow(scope, name, min));
+            });
+            // Shows also get Anime right under Action, unless it's already placed or hidden.
+            const hidden = (prefs.Hidden || []).some((name) => name.toLowerCase() === "anime");
+            if (scope.types === "Series" && !names.includes("Anime") && !hidden) {
                 const at = names.findIndex((name) => name.toLowerCase() === "action");
                 loaders.splice(at + 1 || loaders.length, 0, () => subgenreRow(scope, ANIME));
             }
-            const rows = await Promise.all(loaders.map((load) => load()));
-            return rows.flat();
+            const rows = (await Promise.all(loaders.map((load) => load()))).flat();
+            if (rows.length) {
+                rows[0] = Object.assign({}, rows[0], { extraLink: { label: "Customize", icon: "tune", onClick: () => openGenreCustomizer(scope) } });
+            }
+            return rows;
         }
     };
 
@@ -1824,6 +1908,15 @@
             heading.appendChild(link);
         } else {
             heading.textContent = row.title;
+        }
+        if (row.extraLink) {
+            const extra = el("button", "sl-row-extra");
+            extra.type = "button";
+            extra.appendChild(icon(row.extraLink.icon));
+            extra.appendChild(el("span", null, row.extraLink.label));
+            extra.setAttribute("aria-label", `${row.extraLink.label} genre rows`);
+            extra.addEventListener("click", row.extraLink.onClick);
+            heading.appendChild(extra);
         }
         section.appendChild(heading);
 
@@ -2757,6 +2850,157 @@
         });
 
         start();
+    }
+
+    // Customize: each person's own genre rows. Pin a genre (always at the top, in the pinned
+    // order), hide one (never a row), and whether the rest follows what they watch.
+    async function openGenreCustomizer(scope) {
+        if (document.querySelector(".sl-dialog")) {
+            return;
+        }
+        const [prefs, candidates] = await Promise.all([loadGenrePrefs(), genreCandidates(scope)]);
+        const lower = (name) => name.toLowerCase();
+        let pinned = (prefs.Pinned || []).slice();
+        let hidden = (prefs.Hidden || []).slice();
+        let auto = prefs.Auto !== false;
+
+        const overlay = el("div", "sl-dialog");
+        const panel = el("div", "sl-dialog-panel");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute("aria-modal", "true");
+        panel.setAttribute("aria-label", "Your genre rows");
+        overlay.appendChild(panel);
+        panel.appendChild(el("h2", "sl-dialog-title", "Your genre rows"));
+        panel.appendChild(el("p", "sl-dialog-sub", "Only for you. Pinned genres come first, hidden ones never show as a row."));
+
+        const autoLabel = el("label", "sl-dialog-auto");
+        const autoBox = el("input");
+        autoBox.type = "checkbox";
+        autoBox.checked = auto;
+        autoBox.addEventListener("change", () => {
+            auto = autoBox.checked;
+        });
+        autoLabel.appendChild(autoBox);
+        autoLabel.appendChild(el("span", null, "Order the rest by what I watch"));
+        panel.appendChild(autoLabel);
+
+        const list = el("div", "sl-dialog-list");
+        panel.appendChild(list);
+
+        const toggle = (array, name) => (array.some((other) => lower(other) === lower(name)) ? array.filter((other) => lower(other) !== lower(name)) : array.concat([name]));
+        const button = (iconName, label, on, onClick) => {
+            const b = el("button", `sl-dialog-btn${on ? " is-on" : ""}`);
+            b.type = "button";
+            b.setAttribute("aria-label", label);
+            b.setAttribute("aria-pressed", String(!!on));
+            b.title = label;
+            b.appendChild(icon(iconName));
+            b.addEventListener("click", onClick);
+            return b;
+        };
+        const render = () => {
+            const isPinned = (name) => pinned.some((other) => lower(other) === lower(name));
+            const isHidden = (name) => hidden.some((other) => lower(other) === lower(name));
+            const others = candidates.filter((name) => !isPinned(name)).sort((x, y) => genreLabel(x).localeCompare(genreLabel(y)));
+            const rows = pinned.filter((name) => candidates.some((other) => lower(other) === lower(name))).concat(others);
+            list.replaceChildren(...rows.map((name) => {
+                const line = el("div", `sl-dialog-row${isHidden(name) ? " is-hidden" : ""}${isPinned(name) ? " is-pinned" : ""}`);
+                line.appendChild(el("span", "sl-dialog-name", genreLabel(name)));
+                const actions = el("span", "sl-dialog-actions");
+                if (isPinned(name)) {
+                    const at = pinned.findIndex((other) => lower(other) === lower(name));
+                    const move = (by) => () => {
+                        const next = pinned.slice();
+                        const [moved] = next.splice(at, 1);
+                        next.splice(Math.max(0, Math.min(next.length, at + by)), 0, moved);
+                        pinned = next;
+                        render();
+                    };
+                    actions.appendChild(button("arrow_upward", `Move ${genreLabel(name)} up`, false, move(-1)));
+                    actions.appendChild(button("arrow_downward", `Move ${genreLabel(name)} down`, false, move(1)));
+                }
+                actions.appendChild(button("push_pin", `${isPinned(name) ? "Unpin" : "Pin"} ${genreLabel(name)}`, isPinned(name), () => {
+                    pinned = toggle(pinned, name);
+                    hidden = hidden.filter((other) => lower(other) !== lower(name));
+                    render();
+                }));
+                actions.appendChild(button(isHidden(name) ? "visibility_off" : "visibility", `${isHidden(name) ? "Show" : "Hide"} ${genreLabel(name)}`, isHidden(name), () => {
+                    hidden = toggle(hidden, name);
+                    pinned = pinned.filter((other) => lower(other) !== lower(name));
+                    render();
+                }));
+                line.appendChild(actions);
+                return line;
+            }));
+        };
+        render();
+
+        const footer = el("div", "sl-dialog-footer");
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener("keydown", onKey);
+        };
+        const onKey = (event) => {
+            if (event.key === "Escape") {
+                close();
+            }
+        };
+        const reset = el("button", "sl-dialog-text", "Reset");
+        reset.type = "button";
+        reset.addEventListener("click", () => {
+            pinned = [];
+            hidden = [];
+            auto = true;
+            autoBox.checked = true;
+            render();
+        });
+        const cancel = el("button", "sl-dialog-text", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", close);
+        const save = el("button", "sl-dialog-save", "Save");
+        save.type = "button";
+        save.addEventListener("click", async () => {
+            save.disabled = true;
+            try {
+                await ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl("Streamline/GenrePrefs"),
+                    data: JSON.stringify({ Auto: auto, Pinned: pinned, Hidden: hidden }),
+                    contentType: "application/json"
+                });
+                close();
+                invalidate("genre-prefs");
+                invalidate("genres");
+                rebuildCurrentPage();
+            } catch (error) {
+                console.warn("[Streamline] Saving genre rows failed.", error);
+                save.disabled = false;
+            }
+        });
+        footer.appendChild(reset);
+        footer.appendChild(el("span", "sl-dialog-spacer"));
+        footer.appendChild(cancel);
+        footer.appendChild(save);
+        panel.appendChild(footer);
+
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                close();
+            }
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.appendChild(overlay);
+        save.focus({ preventScroll: true });
+    }
+
+    // Builds the page that's showing again (after changing genre rows).
+    function rebuildCurrentPage() {
+        if (state.root) {
+            destroyRoot(state.root);
+        }
+        state.root = null;
+        state.view = null;
+        scheduleCheck();
     }
 
     // All Genres: poster-shaped tiles, each a little collage of what's in it.
@@ -4100,7 +4344,7 @@
             const preview = state.preview;
             for (const mutation of mutations) {
                 const target = mutation.target;
-                if ((target.closest && target.closest(".sl-root, .sl-detail-extra, .sl-tabbar, .sl-phone-preview, .sl-phone-toggle, .sl-usermenu, .sl-dash-home")) || (preview && preview.contains(target))) {
+                if ((target.closest && target.closest(".sl-root, .sl-detail-extra, .sl-tabbar, .sl-phone-preview, .sl-phone-toggle, .sl-usermenu, .sl-dash-home, .sl-dialog, .sl-userview")) || (preview && preview.contains(target))) {
                     continue;
                 }
                 scheduleCheck();

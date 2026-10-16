@@ -18,8 +18,12 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
   3. **New on Jellyfin**: recently added.
   4. **Coming Soon** (below).
   5. **Watch List**: the watchlist (below), then **Favorites**: Jellyfin's favorites (the heart).
-  6. **Genre rows**: Action, Drama, Crime, Fantasy, Adventure, Romance and Comedy by default (shows'
-     combined TMDb genres like "Action & Adventure" count too). Rows with fewer than 4 titles are skipped.
+  6. **Genre rows**, per person: the admin's list (Action, Drama, Crime, Fantasy, Adventure, Romance,
+     Comedy by default) in the order of what that person watches, favorites and rates (genres they
+     rated down sink; others they watch a lot can come in). **Customize** on the first genre row: pin
+     genres to the top in your own order (shown even with one title), hide genres, or switch the
+     automatic order off. Stored per user; the taste is worked out at night and updated per title
+     during the day. Without any history: the admin's order. Rows with fewer than 4 titles are skipped.
   7. Two big **Series** and **Movies** buttons, for when nothing above caught the eye.
 - **Every row ends in a "See all" card** (and its title has an "Explore all" link) that opens a
   streamlined grid of everything in it. Every such page can be sorted by top rated, recently added,
@@ -217,7 +221,7 @@ The heavy work runs at night (default times, changeable under Dashboard > Schedu
 | 3:00 | Refresh personal recommendations (Personal Recommendations) | scoring every user's taste profile; also on server start |
 | 4:00 | Fill in missing genres and trailers | metadata gaps and trailers for recent titles |
 | 4:30 | Fix wrong titles and posters | at most 40 lookups a night |
-| 5:00 | Prepare collections | every collection, and every movie's directors and writers |
+| 5:00 | Prepare collections and genre rows | every collection, every movie's directors and writers, and everyone's genre taste |
 
 During the day: a page asks for a prepared, saved list (milliseconds); new titles join collections
 within half an hour; new titles get their metadata/trailer/title checks 15 minutes after arriving

@@ -1,7 +1,7 @@
 ---
 name: "Streamline"
 guid: "d0c3935f-a1ab-430c-95ed-388ce83b1431"
-version: "0.15.0.0"
+version: "0.16.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "A streamlined, cinematic home screen"
@@ -17,6 +17,7 @@ artifacts:
 - "Jellyfin.Plugin.Streamline.dll"
 - "Newtonsoft.Json.dll"
 changelog: >
+  0.16.0: Genre rows per person. They're ordered by what that person watches, favorites and rates (rated down sinks; genres outside the admin's list can come in when they watch them a lot), and a Customize button on the first genre row lets them pin genres to the top (in their own order, shown even with only a title or two), hide genres, or turn the automatic order off. Stored per user like the Watch List; the taste is worked out at night (with the collections, 5:00) and updated per title during the day when someone watches, favorites or rates something. People without any history get the admin's order.
   0.15.0: User view is a real view as the test account picked in the settings (sam on the test server): signed in through Quick Connect in a frame over the page, with that account's own Watch List, Favorites, ratings and menus, while you stay signed in; the phone preview follows it; closing signs it out again. Collections are prepared once for the whole library (on the first start, then nightly at 5:00, after the metadata and title fixes) and saved, instead of being worked out per user every 15 minutes; during the day only new titles are worked in, at most every 30 minutes. Big collections (decades, Under 90 Minutes) come in parts so the list stays small; Part of looks a title up directly. Collections made in Jellyfin are no longer shown unless switched on, and Jellyfin's own Collections library is left out of the top bar. Search's typo list loads names only, and keyword genre tiles are counted by the server.
   0.14.0: Coming Soon only shows episodes about to air (requests are no longer listed; they still land on the requester's Watch List). Collections page order: Featured, Franchises, Movie series, Decades, Directors. New Featured collection: Book Adaptations. A TMDb movie series becomes a franchise by itself when a spin-off show is here (a show named after one of its movies, like Jurassic World: Camp Cretaceous). The admin side menu has Home at the top, and so does the dashboard's own menu. With the phone preview setting on, admins get a User view button to see the menus the way a regular user does.
   0.13.0: Search shows people first, then collections, genres and the titles; it forgives typos (a letter or two off: musicl, intersteller, jams bond) and understands Dutch genre and collection words (oorlogsfilms, romantische komedie, tekenfilms, natuurdocumentaires, jaren 80, klassiekers). Home has a Collections row, and its bottom tiles are two by two: Shows, Movies, Genres, Collections. Item pages say which collections a title is part of (with links). New collections: Award-winning Shows (Emmy winners), Classics (before 1980) and the 80s, 90s, 00s, 10s and 20s. The side menu is only for admins and only has Dashboard and Metadata Manager; Settings and Sign out are under the person icon for everyone. Coming Soon no longer shows who requested something. No more Recently Added tag. Smaller banner on phones.
