@@ -3929,7 +3929,8 @@
 
         const needRate = !buttons.querySelector(`.sl-detail-extra[data-item="${id}"]`);
         const needPartOf = !page.querySelector(`.sl-more-like[data-item="${id}"]`);
-        const needTrailer = state.config.TrailersEnabled !== false && !!trailerSlot(page) && !page.querySelector(`.sl-trailer[data-item="${id}"]`);
+        const needTrailer = state.config.TrailersEnabled !== false && !!trailerSlot(page) && !page.querySelector(`.sl-trailer[data-item="${id}"]`)
+            && page.dataset.slNoTrailer !== id;
         const key = `${id}:${needRate}:${needTrailer}:${needPartOf}`;
         if ((!needRate && !needTrailer && !needPartOf) || detailsPending === key) {
             return;
@@ -3970,7 +3971,11 @@
                 if (needPartOf && ["Movie", "Series", "Season", "Episode"].includes(item.Type)) {
                     addMoreLike(page, item, id).catch(() => { /* the page is fine without it */ });
                 }
-                if (needTrailer && ["Movie", "Series", "Season", "Episode"].includes(item.Type)) {
+                // Trailers on movie and show pages only, not on seasons or episodes.
+                if (needTrailer && !["Movie", "Series"].includes(item.Type)) {
+                    page.dataset.slNoTrailer = id;
+                }
+                if (needTrailer && ["Movie", "Series"].includes(item.Type)) {
                     cached(`trailers:${id}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Trailers/${id}`))
                         .catch(() => [])
                         .then((trailers) => {
@@ -4071,6 +4076,10 @@
             return;
         }
         const id = hashParams().get("id");
+        // Only where there's a trailer section (movies and shows).
+        if (!document.querySelector(`.itemDetailPage .sl-trailer[data-item="${id}"]`)) {
+            return;
+        }
         const entry = el("button", "listItem listItem-button actionSheetMenuItem emby-button sl-trailer-menu");
         entry.type = "button";
         const glyph = el("span", "actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons movie");

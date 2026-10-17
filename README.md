@@ -217,9 +217,9 @@ without ratings count as average.
 
 - Episodes and seasons are rated as their show (the button shows the show's rating).
 - **Explore** at the bottom: the collections the title is part of and its first two genres.
-- **Trailers**: shows with several seasons get one per season (from the titles of the show's
-  trailers, KinoCheck, Seerr's TMDb videos, and a YouTube search with an API key); a season or
-  episode page selects its season's. Admins can set a trailer by hand from the page's menu
+- **Trailers**, on movie and show pages (not on seasons or episodes): shows with several seasons
+  get one per season, as chips (from the titles of the show's trailers, KinoCheck, Seerr's TMDb
+  videos, and a YouTube search with an API key). Admins can set a trailer by hand from the page's menu
   (Trailer...): a YouTube link, no trailer, or back to automatic; kept in the plugin's data
   folder, the title's metadata stays as it is.
 - A **back arrow** in the top left on every device returns to the same spot on the previous page
