@@ -543,6 +543,7 @@
             await ApiClient.ajax({ type: "DELETE", url: url(`UserItems/${item.Id}/Rating`, { userId: uid }) }).catch(() => null);
         }
         item.UserData = Object.assign({}, item.UserData, { Rating: level * 2 });
+        invalidate(`userdata:${item.Id}`);
         document.querySelectorAll(`[data-rate-for="${item.Id}"]`).forEach((button) => renderRateButton(button, item));
     }
 
@@ -556,7 +557,7 @@
         button.replaceChildren(current ? icon(current.icon) : hint ? el("span", "sl-rate-hint", "Rate") : icon("thumbs_up_down"));
         button.classList.toggle("is-on", !!current);
         button.style.setProperty("--sl-rate-color", current ? current.color : "");
-        button.title = current ? `Your rating: ${current.label}` : "Rate this";
+        button.title = current ? `Your rating${item.rateOfShow ? " of the show" : ""}: ${current.label}` : item.rateOfShow ? "Rate this show" : "Rate this";
         button.setAttribute("aria-label", button.title);
     }
 
@@ -581,12 +582,30 @@
     });
 
     // A round button (next to Watch List) that opens five small face buttons above it.
-    function rateButton(item, className) {
+    // Episodes and seasons are rated as their show: the button shows (and sets) the show's
+    // rating, and every button for that show follows along.
+    function rateTarget(item) {
+        if ((item.Type === "Episode" || item.Type === "Season") && item.SeriesId) {
+            return { Id: item.SeriesId, Name: item.SeriesName || item.Name, Type: "Series", UserData: null, rateOfShow: true };
+        }
+        return item;
+    }
+
+    function rateButton(original, className) {
+        const item = rateTarget(original);
         const wrap = el("span", "sl-rate");
         const button = el("button", `${className || "sl-round"} sl-rate-btn`);
         button.type = "button";
         button.dataset.rateFor = item.Id;
         renderRateButton(button, item);
+        if (item.rateOfShow) {
+            cached(`userdata:${item.Id}`, 30000, () => getJson(`UserItems/${item.Id}/UserData`, { userId: userId() }))
+                .then((data) => {
+                    item.UserData = data || {};
+                    renderRateButton(button, item);
+                })
+                .catch(() => { /* stays unrated-looking until opened */ });
+        }
         button.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -1244,8 +1263,12 @@
     // in the library, else from TMDb (via Seerr); the date it lands as the tag.
     function buildComingCard(entry) {
         const layout = COMPACT_QUERY.matches ? "poster" : "landscape";
-        const card = el("a", `sl-card sl-card--${layout} sl-card--coming`);
-        card.href = entry.ItemId ? `#/details?id=${entry.ItemId}` : "#";
+        // Only a show that's on the server opens (its own page); anything not here yet is just
+        // a picture with its date.
+        const card = el(entry.ItemId ? "a" : "div", `sl-card sl-card--${layout} sl-card--coming${entry.ItemId ? "" : " sl-card--static"}`);
+        if (entry.ItemId) {
+            card.href = `#/details?id=${entry.ItemId}`;
+        }
         card.setAttribute("aria-label", `${entry.Title}, ${entry.Subtitle}, ${comingDateLabel(entry)}`);
         const media = el("div", "sl-card-media");
         let src = "";
@@ -1271,12 +1294,12 @@
         media.appendChild(el("span", "sl-card-badge sl-card-badge--date", comingDateLabel(entry)));
         card.appendChild(media);
         card.appendChild(el("div", "sl-card-caption", entry.Subtitle));
-        card.addEventListener("click", (event) => {
-            event.preventDefault();
-            if (entry.ItemId) {
+        if (entry.ItemId) {
+            card.addEventListener("click", (event) => {
+                event.preventDefault();
                 showDetails({ Id: entry.ItemId });
-            }
-        });
+            });
+        }
         return card;
     }
 
@@ -1398,7 +1421,7 @@
             }
             const rows = (await Promise.all(loaders.map((load) => load()))).flat();
             if (rows.length) {
-                rows[0] = Object.assign({}, rows[0], { extraLink: { label: "Customize", icon: "tune", onClick: () => openGenreCustomizer(scope) } });
+                rows[0] = Object.assign({}, rows[0], { customizeBar: () => openGenreCustomizer(scope) });
             }
             return rows;
         }
@@ -1796,6 +1819,8 @@
         media.addEventListener("click", () => showDetails(item));
 
         const body = el("div", "sl-preview-body");
+        // The title in plain text, right under the picture (logos can be hard to read).
+        body.appendChild(el("div", "sl-preview-title", item.Type === "Episode" ? item.SeriesName || item.Name : item.Name));
 
         const actions = el("div", "sl-preview-actions");
         const playButton = el("button", "sl-round sl-round--primary");
@@ -1971,14 +1996,22 @@
         } else {
             heading.textContent = row.title;
         }
-        if (row.extraLink) {
-            const extra = el("button", "sl-row-extra");
-            extra.type = "button";
-            extra.appendChild(icon(row.extraLink.icon));
-            extra.appendChild(el("span", null, row.extraLink.label));
-            extra.setAttribute("aria-label", `${row.extraLink.label} genre rows`);
-            extra.addEventListener("click", row.extraLink.onClick);
-            heading.appendChild(extra);
+        if (row.customizeBar) {
+            // A thin bar above the genre rows: a clear divide, saying what they are and how to
+            // change them.
+            const bar = el("div", "sl-genre-bar");
+            const text = el("div", "sl-genre-bar-text");
+            text.appendChild(el("span", "sl-genre-bar-title", "Your genres"));
+            text.appendChild(el("span", "sl-genre-bar-sub", "In the order of what you watch. Pin the ones you love to the top, hide the ones you don't."));
+            bar.appendChild(text);
+            const button = el("button", "sl-genre-bar-btn");
+            button.type = "button";
+            button.appendChild(icon("tune"));
+            button.appendChild(el("span", null, "Customize"));
+            button.setAttribute("aria-label", "Customize your genre rows");
+            button.addEventListener("click", row.customizeBar);
+            bar.appendChild(button);
+            section.appendChild(bar);
         }
         section.appendChild(heading);
 
@@ -2586,7 +2619,7 @@
     }
 
     function removeNav() {
-        document.querySelectorAll(".skinHeader .sl-nav, .skinHeader .sl-logo, .sl-tabbar").forEach((node) => node.remove());
+        document.querySelectorAll(".skinHeader .sl-nav, .skinHeader .sl-logo, .skinHeader .sl-back, .sl-tabbar").forEach((node) => node.remove());
         document.documentElement.classList.remove("sl-nav-on");
     }
 
@@ -3818,7 +3851,8 @@
         if (trailers.length > 1) {
             const picks = el("div", "sl-trailer-picks");
             trailers.forEach((trailer, index) => {
-                const label = trailer.Title ? shortTrailerTitle(trailer.Title, name) : `Trailer ${index + 1}`;
+                // A show's season trailers say which season; the rest go by their title.
+                const label = trailer.Season ? `Season ${trailer.Season}` : trailer.Title ? shortTrailerTitle(trailer.Title, name) : `Trailer ${index + 1}`;
                 const chip = el("button", "sl-sort-chip", label);
                 chip.type = "button";
                 chip.title = trailer.Title || label;
@@ -3894,7 +3928,7 @@
         }
 
         const needRate = !buttons.querySelector(`.sl-detail-extra[data-item="${id}"]`);
-        const needPartOf = !page.querySelector(`.sl-partof[data-item="${id}"]`) && !!trailerSlot(page);
+        const needPartOf = !page.querySelector(`.sl-more-like[data-item="${id}"]`);
         const needTrailer = state.config.TrailersEnabled !== false && !!trailerSlot(page) && !page.querySelector(`.sl-trailer[data-item="${id}"]`);
         const key = `${id}:${needRate}:${needTrailer}:${needPartOf}`;
         if ((!needRate && !needTrailer && !needPartOf) || detailsPending === key) {
@@ -3929,10 +3963,12 @@
                         group.appendChild(rateButton(item, "sl-round sl-round--hero"));
                         group.appendChild(playedButton(item, "sl-round sl-round--hero"));
                     });
-                    buttons.insertBefore(group, buttons.querySelector(".btnMoreCommands"));
+                    // Before the ⋯ button when it's one of the row's own buttons, else at the end.
+                    const more = Array.from(buttons.children).find((child) => child.classList.contains("btnMoreCommands")) || null;
+                    buttons.insertBefore(group, more);
                 }
                 if (needPartOf && ["Movie", "Series", "Season", "Episode"].includes(item.Type)) {
-                    addPartOf(page, item, id);
+                    addMoreLike(page, item, id).catch(() => { /* the page is fine without it */ });
                 }
                 if (needTrailer && ["Movie", "Series", "Season", "Episode"].includes(item.Type)) {
                     cached(`trailers:${id}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Trailers/${id}`))
@@ -3943,9 +3979,8 @@
                                 return;
                             }
                             page.querySelectorAll(".sl-trailer").forEach((node) => node.remove());
-                            // After the "Part of" links when they came first.
-                            const partOf = page.querySelector(`.sl-partof[data-item="${id}"]`);
-                            slot.parent.insertBefore(buildTrailer(item, trailers || []), partOf && partOf.parentNode === slot.parent ? partOf.nextSibling : slot.before);
+                            const before = slot.before && slot.before.parentNode === slot.parent ? slot.before : null;
+                            slot.parent.insertBefore(buildTrailer(item, trailers || []), before);
                             // Jellyfin's own Trailer button would just open the same trailer.
                             buttons.classList.toggle("sl-has-trailer", !!(trailers && trailers.length));
                         });
@@ -3956,40 +3991,198 @@
             });
     }
 
-    // "Part of" links under the summary: the franchises, movie series and themed collections a
-    // title is in (an episode or season: its show's). Not the broad ones like the decades.
-    function addPartOf(page, item, id) {
-        const titleId = normalizeIds([item.Type === "Movie" || item.Type === "Series" ? item.Id : item.SeriesId])[0];
-        cached(`partof:${titleId}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Collections/Of/${titleId}`)).then((collections) => {
-            const slot = trailerSlot(page);
-            if (!slot || !page.isConnected || hashParams().get("id") !== id || page.querySelector(`.sl-partof[data-item="${id}"]`)) {
-                return;
-            }
-            const order = { universe: 0, collection: 1, featured: 2, director: 3 };
-            const found = (collections || [])
-                .filter((collection) => !isBroadCollection(collection))
-                .sort((x, y) => order[x.Kind] - order[y.Kind])
-                .slice(0, 5);
-            page.querySelectorAll(".sl-partof").forEach((node) => node.remove());
-            if (!found.length) {
-                return;
-            }
-            const line = el("div", "sl-detail-extra sl-partof");
-            line.dataset.item = id;
-            line.appendChild(el("span", "sl-partof-label", "Part of"));
-            found.forEach((collection) => {
-                const link = el("a", "sl-partof-link", collection.Kind === "director" ? `More from ${collection.Name}` : collection.Name);
-                link.href = `#${collectionHref(collection)}`;
-                link.addEventListener("click", (event) => {
-                    event.preventDefault();
-                    navigate(collectionHref(collection));
-                });
-                line.appendChild(link);
+    // At the bottom of an item page: "More like this", the collections the title is part of and
+    // its first two genres (approved ones), each a button to go and look. An episode or season
+    // uses its show. Not the broad collections like the decades.
+    async function addMoreLike(page, item, id) {
+        const titleId = item.Type === "Movie" || item.Type === "Series" ? item.Id : item.SeriesId;
+        if (!titleId) {
+            return;
+        }
+        const [collections, title] = await Promise.all([
+            cached(`partof:${normalizeIds([titleId])[0]}`, STABLE_ROW_TTL_MS, () => getJson(`Streamline/Collections/Of/${titleId}`)).catch(() => []),
+            titleId === item.Id ? item : cached(`item:${titleId}`, 60000, () => ApiClient.getItem(userId(), titleId)).catch(() => null)
+        ]);
+        const bottom = page.querySelector(".detailPageSecondaryContainer .detailPageContent") || page.querySelector(".detailPageContent");
+        if (!bottom || !page.isConnected || hashParams().get("id") !== id || page.querySelector(`.sl-more-like[data-item="${id}"]`)) {
+            return;
+        }
+        const order = { universe: 0, collection: 1, featured: 2, director: 3 };
+        const found = (collections || [])
+            .filter((collection) => !isBroadCollection(collection))
+            .sort((x, y) => order[x.Kind] - order[y.Kind])
+            .slice(0, 4);
+        const type = title && title.Type === "Series" ? "Series" : "Movie";
+        const scope = Object.assign({}, HOME_SCOPE, { key: `home:${type}`, types: type, noun: type === "Series" ? "Shows" : "Movies" });
+        const genres = title ? Array.from(new Set((title.Genres || []).flatMap(canonicalGenres))).slice(0, 2) : [];
+        page.querySelectorAll(".sl-more-like").forEach((node) => node.remove());
+        if (!found.length && !genres.length) {
+            return;
+        }
+
+        const section = el("div", "verticalSection detailVerticalSection sl-detail-extra sl-more-like");
+        section.dataset.item = id;
+        // Jellyfin has its own "More Like This" (posters) just above; this one is "Explore".
+        section.appendChild(el("h2", "sectionTitle sl-more-like-title", "Explore"));
+        const buttons = el("div", "sl-more-like-buttons");
+        const add = (iconName, label, sub, href) => {
+            const link = el("a", "sl-more-like-btn");
+            link.href = `#${href}`;
+            link.appendChild(icon(iconName));
+            const text = el("span", "sl-more-like-text");
+            text.appendChild(el("span", "sl-more-like-label", label));
+            text.appendChild(el("span", "sl-more-like-sub", sub));
+            link.appendChild(text);
+            link.addEventListener("click", (event) => {
+                event.preventDefault();
+                navigate(href);
             });
-            // Before the trailer when it's already there, else where it will go.
-            const trailer = page.querySelector(".sl-trailer");
-            slot.parent.insertBefore(line, trailer && trailer.parentNode === slot.parent ? trailer : slot.before);
-        }).catch(() => { /* no links, the page is fine without */ });
+            buttons.appendChild(link);
+        };
+        found.forEach((collection) => add(
+            collection.Kind === "director" ? "movie_filter" : "video_library",
+            collection.Kind === "director" ? `More from ${collection.Name}` : collection.Name,
+            collection.Kind === "universe" ? "Franchise" : collection.Kind === "director" ? "Director" : "Collection",
+            collectionHref(collection)));
+        genres.forEach((genre) => add("category", genreLabel(genre), `More ${scope.noun.toLowerCase()}`, browseHref(scope, { sl: "genre", genre })));
+        section.appendChild(buttons);
+        bottom.appendChild(section);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Admins: "Trailer..." in an item page's ⋯ menu, to set the right trailer by hand when the
+    // automatic one is wrong (or none), and to go back to automatic.
+    // ---------------------------------------------------------------------------------------
+
+    let moreMenuOpenedAt = 0;
+    document.addEventListener("click", (event) => {
+        if (event.target.closest && event.target.closest(".itemDetailPage .btnMoreCommands")) {
+            moreMenuOpenedAt = Date.now();
+        }
+    }, true);
+
+    function addTrailerMenuItem() {
+        if (!state.isAdmin || Date.now() - moreMenuOpenedAt > 3000 || !window.location.hash.startsWith("#/details")) {
+            return;
+        }
+        const sheet = document.querySelector(".actionSheet.opened");
+        const list = sheet && sheet.querySelector(".actionSheetMenuItem") && sheet.querySelector(".actionSheetMenuItem").parentElement;
+        if (!list || list.querySelector(".sl-trailer-menu")) {
+            return;
+        }
+        const id = hashParams().get("id");
+        const entry = el("button", "listItem listItem-button actionSheetMenuItem emby-button sl-trailer-menu");
+        entry.type = "button";
+        const glyph = el("span", "actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons movie");
+        glyph.setAttribute("aria-hidden", "true");
+        entry.appendChild(glyph);
+        const body = el("div", "listItemBody actionsheetListItemBody");
+        body.appendChild(el("div", "listItemBodyText actionSheetItemText", "Trailer..."));
+        entry.appendChild(body);
+        entry.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            // Close Jellyfin's menu the way a click next to it does (or, failing that, the way
+            // Back does), then open ours.
+            const container = sheet.closest(".dialogContainer");
+            if (container) {
+                container.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            }
+            window.setTimeout(() => {
+                if (sheet.isConnected && sheet.classList.contains("opened")) {
+                    window.history.back();
+                }
+                window.setTimeout(() => openTrailerDialog(id), 250);
+            }, 200);
+        });
+        list.appendChild(entry);
+    }
+
+    async function openTrailerDialog(id) {
+        if (!id || document.querySelector(".sl-dialog")) {
+            return;
+        }
+        const info = await getJson(`Streamline/Admin/Trailers/${id}`).catch(() => null);
+        if (!info) {
+            return;
+        }
+        const overlay = el("div", "sl-dialog");
+        const panel = el("div", "sl-dialog-panel");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute("aria-modal", "true");
+        panel.setAttribute("aria-label", "Trailer");
+        overlay.appendChild(panel);
+        panel.appendChild(el("h2", "sl-dialog-title", "Trailer"));
+        panel.appendChild(el("p", "sl-dialog-sub", `For ${info.TargetName}. Only admins can change this; it's what everyone sees.`));
+        const choice = info.Choice;
+        panel.appendChild(el("p", "sl-trailer-now", choice ? (choice.None ? "Now: no trailer (your choice)." : `Now: ${choice.Title || choice.Key} (your choice).`) : "Now: found automatically."));
+
+        const field = el("input", "sl-trailer-input");
+        field.type = "url";
+        field.placeholder = "YouTube link, like https://www.youtube.com/watch?v=...";
+        field.setAttribute("aria-label", "YouTube link");
+        panel.appendChild(field);
+        const message = el("p", "sl-trailer-message");
+        panel.appendChild(message);
+
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener("keydown", onKey);
+        };
+        const onKey = (event) => {
+            if (event.key === "Escape") {
+                close();
+            }
+        };
+        const done = () => {
+            close();
+            invalidate(`trailers:${id}`);
+            document.querySelectorAll(".sl-trailer").forEach((node) => node.remove());
+            enhanceDetails();
+        };
+        const send = async (type, body) => {
+            message.textContent = "";
+            try {
+                await ApiClient.ajax({ type, url: ApiClient.getUrl(`Streamline/Admin/Trailers/${id}`), data: body ? JSON.stringify(body) : undefined, contentType: "application/json" });
+                done();
+            } catch (error) {
+                message.textContent = "That didn't work: check it's a YouTube link to a video that may be embedded.";
+            }
+        };
+
+        const footer = el("div", "sl-dialog-footer sl-trailer-footer");
+        const button = (label, className, onClick) => {
+            const b = el("button", className, label);
+            b.type = "button";
+            b.addEventListener("click", onClick);
+            footer.appendChild(b);
+            return b;
+        };
+        button("Back to automatic", "sl-dialog-text", () => send("DELETE"));
+        button("No trailer", "sl-dialog-text", () => send("POST", { None: true }));
+        footer.appendChild(el("span", "sl-dialog-spacer"));
+        button("Cancel", "sl-dialog-text", close);
+        const use = button("Use this video", "sl-dialog-save", () => {
+            if (!field.value.trim()) {
+                message.textContent = "Paste a YouTube link first.";
+                return;
+            }
+            send("POST", { Url: field.value.trim() });
+        });
+        field.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                use.click();
+            }
+        });
+        panel.appendChild(footer);
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                close();
+            }
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.appendChild(overlay);
+        field.focus({ preventScroll: true });
     }
 
     // Whether the signed-in user is an admin: only admins keep the side menu (with just the
@@ -4216,10 +4409,128 @@
         menu.querySelector(".sl-usermenu-item").focus({ preventScroll: true });
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Back: a small arrow in the top-left corner on every device. Going back (with it, the
+    // browser's or the phone's back) returns to the same spot: how far down the page was
+    // scrolled, and how far each row was scrolled sideways.
+    // ---------------------------------------------------------------------------------------
+
+    const scrollMemory = new Map();
+    let restoreToken = 0;
+
+    function rememberedFor(hash) {
+        if (!scrollMemory.has(hash)) {
+            scrollMemory.set(hash, { y: 0, rows: {} });
+        }
+        return scrollMemory.get(hash);
+    }
+
+    function rememberScroll() {
+        rememberedFor(window.location.hash).y = window.scrollY;
+    }
+
+    // After a click that leaves the page, the old page is hidden before the address changes,
+    // and the browser's clamped scroll position would be remembered as that page's. Keep what was
+    // remembered just before the click instead.
+    let frozenUntil = 0;
+    document.addEventListener("click", () => {
+        rememberScroll();
+        frozenUntil = Date.now() + 1500;
+    }, true);
+    window.addEventListener("hashchange", () => {
+        frozenUntil = Date.now() + 1500;
+    });
+    window.addEventListener("scroll", () => {
+        if (!restoring && Date.now() > frozenUntil) {
+            rememberScroll();
+        }
+    }, { passive: true });
+    // Rows scrolled sideways (the scroll events of the rows themselves).
+    document.addEventListener("scroll", (event) => {
+        const track = event.target && event.target.classList && event.target.classList.contains("sl-row-track") ? event.target : null;
+        const row = track && track.closest(".sl-row");
+        if (row && row.dataset.row && !restoring) {
+            rememberedFor(window.location.hash).rows[row.dataset.row] = track.scrollLeft;
+        }
+    }, { capture: true, passive: true });
+
+    let restoring = false;
+    window.addEventListener("popstate", () => {
+        const memory = scrollMemory.get(window.location.hash);
+        if (!memory || (!memory.y && !Object.keys(memory.rows).length)) {
+            return;
+        }
+        // The page may still be building (rows filling in, a grid loading more): keep putting
+        // it back for a few seconds until it's tall enough and the rows are there.
+        const token = ++restoreToken;
+        const hash = window.location.hash;
+        const started = Date.now();
+        let stableSince = 0;
+        restoring = true;
+        const step = () => {
+            if (token !== restoreToken || window.location.hash !== hash) {
+                restoring = false;
+                return;
+            }
+            if (Math.abs(window.scrollY - memory.y) > 2) {
+                window.scrollTo(0, memory.y);
+            }
+            let rowsDone = true;
+            Object.entries(memory.rows).forEach(([key, left]) => {
+                const track = Array.from(document.querySelectorAll(`.sl-row[data-row="${CSS.escape(key)}"] .sl-row-track`)).find(isVisible);
+                if (!track) {
+                    rowsDone = false;
+                } else if (Math.abs(track.scrollLeft - left) > 2) {
+                    track.scrollLeft = left;
+                    rowsDone = rowsDone && Math.abs(track.scrollLeft - left) <= 2;
+                }
+            });
+            // Keep it there a moment after reaching it: Jellyfin puts its own idea of the
+            // position back a little later on some pages.
+            const there = Math.abs(window.scrollY - memory.y) <= 2 && rowsDone;
+            stableSince = there ? stableSince || Date.now() : 0;
+            if ((!there || Date.now() - stableSince < 1200) && Date.now() - started < 6000) {
+                window.setTimeout(step, 100);
+            } else {
+                restoring = false;
+            }
+        };
+        window.setTimeout(step, 50);
+    });
+    // Someone scrolling while it's still being put back takes over.
+    ["wheel", "touchstart", "keydown"].forEach((type) => window.addEventListener(type, () => {
+        if (restoring) {
+            restoreToken++;
+            restoring = false;
+        }
+    }, { passive: true }));
+
+    function ensureBackButton() {
+        const headerLeft = document.querySelector(".skinHeader .headerLeft");
+        if (!headerLeft || headerLeft.querySelector(".sl-back")) {
+            return;
+        }
+        const back = el("button", "sl-back headerButton");
+        back.type = "button";
+        back.title = "Back";
+        back.setAttribute("aria-label", "Back");
+        back.appendChild(icon("arrow_back"));
+        back.addEventListener("click", () => {
+            rememberScroll();
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                navigate("/home");
+            }
+        });
+        headerLeft.insertBefore(back, headerLeft.firstChild);
+    }
+
     function syncNav() {
         loadConfig()
             .then((config) => {
                 if (config && config.Enabled !== false) {
+                    ensureBackButton();
                     ensureNav();
                     ensureTabBar();
                     ensurePhonePreviewButton();
@@ -4263,6 +4574,7 @@
             return;
         }
         try {
+            addTrailerMenuItem();
             checkPage();
         } catch (error) {
             giveUp(error);

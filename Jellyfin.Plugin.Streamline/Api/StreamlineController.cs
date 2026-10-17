@@ -33,6 +33,8 @@ public sealed class StreamlineController : ControllerBase
     private readonly IdentityService _identity;
     private readonly SeerrService _seerr;
     private readonly ComingSoonService _comingSoon;
+    private readonly TrailerOverrides _trailerOverrides;
+    private readonly SeasonTrailerService _seasonTrailers;
     private readonly CollectionService _collections;
     private readonly GenreTasteService _genreTaste;
 
@@ -50,6 +52,8 @@ public sealed class StreamlineController : ControllerBase
     /// <param name="comingSoon">The Coming Soon row.</param>
     /// <param name="collections">The Collections page.</param>
     /// <param name="genreTaste">Genre-row order and choices.</param>
+    /// <param name="trailerOverrides">Admins' trailer choices.</param>
+    /// <param name="seasonTrailers">Trailers per season.</param>
     public StreamlineController(
         IUserManager userManager,
         ILibraryManager libraryManager,
@@ -61,8 +65,12 @@ public sealed class StreamlineController : ControllerBase
         SeerrService seerr,
         ComingSoonService comingSoon,
         CollectionService collections,
-        GenreTasteService genreTaste)
+        GenreTasteService genreTaste,
+        TrailerOverrides trailerOverrides,
+        SeasonTrailerService seasonTrailers)
     {
+        _trailerOverrides = trailerOverrides;
+        _seasonTrailers = seasonTrailers;
         _genreTaste = genreTaste;
         _collections = collections;
         _comingSoon = comingSoon;
@@ -228,26 +236,145 @@ public sealed class StreamlineController : ControllerBase
             return NotFound();
         }
 
-        var seriesId = item switch
+        // The title whose trailer this is: a season for a season or episode page (its own
+        // trailer if it has one), else the movie or show.
+        var season = item switch
         {
-            MediaBrowser.Controller.Entities.TV.Episode episode => episode.SeriesId,
-            MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId,
-            _ => Guid.Empty
+            MediaBrowser.Controller.Entities.TV.Episode episode => episode.Season,
+            MediaBrowser.Controller.Entities.TV.Season own => own,
+            _ => null
         };
-        if (seriesId != Guid.Empty)
+        var title = item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season
+            ? _libraryManager.GetItemById(item is MediaBrowser.Controller.Entities.TV.Episode e ? e.SeriesId : ((MediaBrowser.Controller.Entities.TV.Season)item).SeriesId) ?? item
+            : item;
+
+        // An admin's choice wins: the season's, else the movie's or show's.
+        var chosen = (season is null ? null : _trailerOverrides.Get(season.Id)) ?? _trailerOverrides.Get(title.Id);
+        if (chosen is not null)
         {
-            item = _libraryManager.GetItemById(seriesId) ?? item;
+            return Ok(chosen.None || chosen.Key is null
+                ? Array.Empty<TrailerInfo>()
+                : new[] { new TrailerInfo { Key = chosen.Key, Title = chosen.Title, Season = season?.IndexNumber } });
         }
 
-        var trailers = await _trailers.GetTrailersAsync(item, cancellationToken).ConfigureAwait(false);
+        var trailers = await _trailers.GetTrailersAsync(title, cancellationToken).ConfigureAwait(false);
         if (trailers.Count == 0
             && Plugin.Instance!.Configuration.AutoFillMetadata
-            && await _trailerFinder.FindAsync(item, cancellationToken).ConfigureAwait(false))
+            && await _trailerFinder.FindAsync(title, cancellationToken).ConfigureAwait(false))
         {
-            trailers = await _trailers.GetTrailersAsync(item, cancellationToken).ConfigureAwait(false);
+            trailers = await _trailers.GetTrailersAsync(title, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Shows with more than one season: a trailer per season. On a season (or episode) page
+        // that season's comes first, so it's the one selected; on the show's page the show's own
+        // trailers come first, then one per season.
+        if (title is MediaBrowser.Controller.Entities.TV.Series series)
+        {
+            var seasonNumbers = _seasonTrailers.SeasonNumbers(series);
+            if (seasonNumbers.Count > 1)
+            {
+                var perSeason = await _seasonTrailers.GetAsync(series, cancellationToken).ConfigureAwait(false);
+                var last = seasonNumbers.Max();
+
+                // The show's own trailers say which season too ("Season 1 Trailer", "Final Season").
+                var all = trailers.Select(trailer => new TrailerInfo { Key = trailer.Key, Title = trailer.Title, Season = trailer.Season ?? SeasonTrailerService.SeasonOf(trailer.Title, series.Name, last) }).ToList();
+                var known = all.Select(trailer => trailer.Key).ToHashSet();
+                var wanted = perSeason.OrderBy(entry => entry.Key)
+                    .SelectMany(entry => entry.Value.Select(video => (video.Key, video.Title, (int?)entry.Key)))
+                    .Where(video => !known.Contains(video.Key));
+                all.AddRange(await _trailers.CheckVideosAsync(wanted, cancellationToken).ConfigureAwait(false));
+
+                trailers = season?.IndexNumber is int number
+                    // A season: its own trailers (selected first), then the show's general ones.
+                    ? all.Where(trailer => trailer.Season == number).Concat(all.Where(trailer => trailer.Season is null)).Take(6).ToList()
+                    // The show: its general trailers, then one per season.
+                    : all.Where(trailer => trailer.Season is null)
+                        .Concat(all.Where(trailer => trailer.Season is not null).GroupBy(trailer => trailer.Season).OrderBy(group => group.Key).Select(group => group.First()))
+                        .Take(10).ToList();
+            }
         }
 
         return Ok(trailers);
+    }
+
+    /// <summary>
+    /// Gets an admin's trailer choice for a title (an episode's is its season's).
+    /// </summary>
+    /// <param name="itemId">The movie, show, season or episode.</param>
+    [HttpGet("Admin/Trailers/{itemId}")]
+    [Authorize(Policy = "RequiresElevation")]
+    public ActionResult<object> GetTrailerChoice([FromRoute] Guid itemId)
+    {
+        var target = TrailerTarget(itemId);
+        if (target is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(new { TargetId = target.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), TargetName = target is MediaBrowser.Controller.Entities.TV.Season s ? $"{s.SeriesName}, {s.Name}" : target.Name, Choice = _trailerOverrides.Get(target.Id) });
+    }
+
+    /// <summary>
+    /// Sets an admin's trailer choice: a YouTube link, or no trailer.
+    /// </summary>
+    /// <param name="itemId">The movie, show, season or episode (an episode sets its season's).</param>
+    /// <param name="choice">The YouTube link, or <c>None</c> for no trailer.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("Admin/Trailers/{itemId}")]
+    [Authorize(Policy = "RequiresElevation")]
+    public async Task<ActionResult<object>> SetTrailerChoice([FromRoute] Guid itemId, [FromBody] TrailerChoiceRequest choice, CancellationToken cancellationToken)
+    {
+        var target = TrailerTarget(itemId);
+        if (target is null)
+        {
+            return NotFound();
+        }
+
+        if (choice.None)
+        {
+            _trailerOverrides.Set(target.Id, new TrailerOverride { None = true });
+            return Ok(new { Saved = true });
+        }
+
+        var key = TrailerService.YouTubeKey(choice.Url) ?? (choice.Url is { Length: 11 } raw && raw.All(c => char.IsLetterOrDigit(c) || c is '-' or '_') ? raw : null);
+        if (key is null)
+        {
+            return BadRequest("That isn't a YouTube link.");
+        }
+
+        var checkedVideo = (await _trailers.CheckVideosAsync([(key, null, null)], cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+        if (checkedVideo is null)
+        {
+            return BadRequest("That video can't be played here (removed, private, or embedding is off).");
+        }
+
+        _trailerOverrides.Set(target.Id, new TrailerOverride { Key = key, Title = checkedVideo.Title });
+        return Ok(new { Saved = true, checkedVideo.Title });
+    }
+
+    /// <summary>
+    /// Removes an admin's trailer choice: back to the automatic trailer.
+    /// </summary>
+    /// <param name="itemId">The movie, show, season or episode.</param>
+    [HttpDelete("Admin/Trailers/{itemId}")]
+    [Authorize(Policy = "RequiresElevation")]
+    public ActionResult ResetTrailerChoice([FromRoute] Guid itemId)
+    {
+        var target = TrailerTarget(itemId);
+        if (target is null)
+        {
+            return NotFound();
+        }
+
+        _trailerOverrides.Set(target.Id, null);
+        return NoContent();
+    }
+
+    // What a trailer choice applies to: an episode's goes to its season.
+    private MediaBrowser.Controller.Entities.BaseItem? TrailerTarget(Guid itemId)
+    {
+        var item = _libraryManager.GetItemById(itemId);
+        return item is MediaBrowser.Controller.Entities.TV.Episode episode ? (MediaBrowser.Controller.Entities.BaseItem?)episode.Season ?? item : item;
     }
 
     /// <summary>
@@ -415,3 +542,14 @@ public sealed class StreamlineController : ControllerBase
     }
 }
 
+/// <summary>
+/// An admin's trailer choice, as sent by the page.
+/// </summary>
+public sealed class TrailerChoiceRequest
+{
+    /// <summary>Gets or sets the YouTube link (or video id).</summary>
+    public string? Url { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the title should show no trailer.</summary>
+    public bool None { get; set; }
+}

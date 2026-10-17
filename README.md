@@ -114,7 +114,8 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
   3. **Movie series**: every other TMDb movie collection with at least 3 movies here (James Bond,
      Jurassic Park...), found automatically, plus collections made in Jellyfin.
   4. **Decades**: Classics (before 1980), 80s, 90s, 00s, 10s, 20s.
-  5. **Directors** with 4 or more movies on the server.
+  5. **Directors**, A to Z, with 4 or more titles here: their movies, and shows where they
+     directed the first episode or a third of the episodes.
   Collections made in Jellyfin itself are left out unless *Also show collections made in Jellyfin*
   is on. Everything is worked out from the whole library, not only new arrivals: once on the first
   start after installing, then nightly (*Prepare collections*, 5:00), saved to the plugin's data
@@ -211,6 +212,18 @@ load, no restart needed.
 Ratings come from Jellyfin's metadata: the community rating (TMDb, or IMDb when the built-in OMDb
 provider is enabled for the library) and the critic rating (Rotten Tomatoes, OMDb only). Titles
 without ratings count as average.
+
+## Item pages
+
+- Episodes and seasons are rated as their show (the button shows the show's rating).
+- **Explore** at the bottom: the collections the title is part of and its first two genres.
+- **Trailers**: shows with several seasons get one per season (from the titles of the show's
+  trailers, KinoCheck, Seerr's TMDb videos, and a YouTube search with an API key); a season or
+  episode page selects its season's. Admins can set a trailer by hand from the page's menu
+  (Trailer...): a YouTube link, no trailer, or back to automatic; kept in the plugin's data
+  folder, the title's metadata stays as it is.
+- A **back arrow** in the top left on every device returns to the same spot on the previous page
+  (also with the browser's or phone's back): how far down, and how far each row was scrolled.
 
 ## Genres
 

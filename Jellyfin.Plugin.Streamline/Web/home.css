@@ -2434,37 +2434,62 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 
 /* ---- Customize genre rows ------------------------------------------------------------------ */
 
-.sl-row-extra {
+/* The bar above the genre rows: full width, a clear divide from the rows above it. */
+.sl-genre-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+    margin: 0.4rem var(--sl-gutter) 1.1rem;
+    padding: 0.7em 0.9em 0.7em 1.1em;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.sl-genre-bar-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sl-genre-bar-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.sl-genre-bar-sub {
+    color: var(--sl-text-dim);
+    font-size: 0.82rem;
+}
+
+.sl-genre-bar-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25em;
-    margin-left: 0.9em;
-    padding: 0.2em 0.7em;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    flex: 0 0 auto;
+    gap: 0.35em;
+    padding: 0.45em 1em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 999px;
     background: none;
-    color: var(--sl-text-dim);
+    color: #fff;
     font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    vertical-align: middle;
+    font-size: 0.85rem;
+    font-weight: 700;
     cursor: pointer;
 }
 
-.sl-row-extra:hover {
-    color: #fff;
+.sl-genre-bar-btn:hover {
+    border-color: var(--sl-accent);
+}
+
+.sl-genre-bar-btn:focus-visible {
     border-color: var(--sl-accent);
     outline: none;
 }
 
-.sl-row-extra:focus-visible {
-    color: #fff;
-    border-color: var(--sl-accent);
-    outline: none;
-}
-
-.sl-row-extra .material-icons {
-    font-size: 1rem;
+.sl-genre-bar-btn .material-icons {
+    font-size: 1.1rem;
 }
 
 .sl-dialog {
@@ -2832,7 +2857,8 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
         margin-left: 32px;
     }
 
-    .sl-row-extra > * + * {
+    .sl-genre-bar > * + *,
+    .sl-genre-bar-btn > * + * {
         margin-left: 0.25em;
     }
 
@@ -2880,4 +2906,156 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     .sl-dialog-btn.is-on {
         background: color-mix(in srgb, var(--sl-accent) 30%, transparent);
     }
+}
+
+/* ---- Hover preview: the title under the picture -------------------------------------------- */
+
+.sl-preview-title {
+    margin: 0 0 0.55em;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #fff;
+}
+
+/* Coming Soon cards for things not on the server yet: not clickable. */
+.sl-card--static {
+    cursor: default;
+}
+
+.sl-card--static:hover .sl-card-media {
+    filter: none;
+}
+
+/* ---- Item pages: More like this (bottom) ------------------------------------------------------ */
+
+.sl-more-like-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.sl-more-like-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7em;
+    min-width: 200px;
+    padding: 0.7em 1.1em 0.7em 0.9em;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sl-more-like-btn:hover {
+    border-color: var(--sl-accent);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.sl-more-like-btn:focus-visible {
+    border-color: var(--sl-accent);
+    outline: none;
+}
+
+.sl-more-like-btn .material-icons {
+    font-size: 1.6rem;
+    color: var(--sl-accent);
+}
+
+.sl-more-like-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.sl-more-like-label {
+    font-weight: 700;
+}
+
+.sl-more-like-sub {
+    color: var(--sl-text-dim);
+    font-size: 0.8rem;
+}
+
+@media (max-width: 640px) {
+    .sl-more-like-btn {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+}
+
+@supports not (aspect-ratio: 1 / 1) {
+    .sl-more-like-buttons > * {
+        margin: 0 10px 10px 0;
+    }
+
+    .sl-more-like-btn > * + * {
+        margin-left: 0.7em;
+    }
+}
+
+/* ---- Admin trailer choice ------------------------------------------------------------------- */
+
+.sl-trailer-now {
+    margin: 0 0 0.8em;
+    font-size: 0.9rem;
+}
+
+.sl-trailer-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.7em 0.9em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: #111;
+    color: #fff;
+    font: inherit;
+}
+
+.sl-trailer-input:focus {
+    border-color: var(--sl-accent);
+    outline: none;
+}
+
+.sl-trailer-message {
+    min-height: 1.2em;
+    margin: 0.5em 0 0;
+    color: #ff8a80;
+    font-size: 0.85rem;
+}
+
+.sl-trailer-footer {
+    flex-wrap: wrap;
+}
+
+/* ---- Back arrow: top left, every device; Jellyfin's own back and home buttons make way ----- */
+
+.sl-back {
+    display: none;
+}
+
+html.sl-nav-on body:not(.dashboardDocument) .skinHeader .sl-back {
+    width: 2.6em;
+    height: 2.6em;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    margin-right: 0.15em;
+}
+
+html.sl-nav-on body:not(.dashboardDocument) .skinHeader .headerBackButton,
+html.sl-nav-on body:not(.dashboardDocument) .skinHeader .headerHomeButton {
+    display: none !important;
+}
+
+html.sl-nav-on .skinHeader .sl-back:hover {
+    background: rgba(255, 255, 255, 0.1);
 }

@@ -471,12 +471,62 @@ public sealed class CollectionService
             return known;
         }
 
-        var people = _libraryManager.GetPeople(item);
-        var credits = new Credits(
-            people.Where(person => person.Type == PersonKind.Director).Select(person => person.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            people.Where(person => person.Type is PersonKind.Writer or PersonKind.Director).Select(person => person.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
-        _credits[item.Id] = credits;
+        var credits = item is MediaBrowser.Controller.Entities.TV.Series series ? ShowCredits(series) : MovieCredits(item);
+
+        // Nothing yet (a new title whose people haven't come in): don't remember that, so the
+        // next rebuild looks again instead of leaving it out of its director until the night.
+        if (credits.Directors.Length > 0 || credits.People.Length > 0)
+        {
+            _credits[item.Id] = credits;
+        }
+
         return credits;
+    }
+
+    private Credits MovieCredits(BaseItem movie)
+    {
+        var people = _libraryManager.GetPeople(movie);
+        return new Credits(
+            people.Where(person => person.Type == PersonKind.Director).Select(person => person.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            people.Where(person => person.Type is PersonKind.Writer or PersonKind.Director).Select(person => person.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    // A show's directors are on its episodes: someone counts for the show when they directed its
+    // first episode or at least a third of the episodes here (Ben Stiller and Severance), plus
+    // its creators when Jellyfin has them.
+    private Credits ShowCredits(MediaBrowser.Controller.Entities.TV.Series series)
+    {
+        var creators = _libraryManager.GetPeople(series)
+            .Where(person => person.Type is PersonKind.Creator or PersonKind.Director)
+            .Select(person => person.Name.Trim());
+        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            AncestorIds = [series.Id],
+            IncludeItemTypes = [BaseItemKind.Episode],
+            Recursive = true,
+            DtoOptions = new DtoOptions(false)
+        }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToList();
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var pilot = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var episode in episodes)
+        {
+            foreach (var name in _libraryManager.GetPeople(episode).Where(person => person.Type == PersonKind.Director).Select(person => person.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                counts[name] = counts.GetValueOrDefault(name) + 1;
+                if (episode.ParentIndexNumber == 1 && episode.IndexNumber == 1)
+                {
+                    pilot.Add(name);
+                }
+            }
+        }
+
+        var directors = counts
+            .Where(entry => pilot.Contains(entry.Key) || (entry.Value >= 2 && entry.Value * 3 >= episodes.Count))
+            .Select(entry => entry.Key)
+            .Concat(creators)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new Credits(directors, directors);
     }
 
     // A collection in the snapshot: everything in it library-wide, and how many of those a user
@@ -562,9 +612,9 @@ public sealed class CollectionService
             }
         }
 
-        // Directors with a body of work here.
-        foreach (var group in items.OfType<Movie>()
-            .SelectMany(movie => CreditsOf(movie).Directors.Select(name => (Name: name, Movie: (BaseItem)movie)))
+        // Directors with a body of work here: their movies, and shows they shaped.
+        foreach (var group in items.Where(item => item is Movie or MediaBrowser.Controller.Entities.TV.Series)
+            .SelectMany(title => CreditsOf(title).Directors.Select(name => (Name: name, Movie: title)))
             .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() >= MinDirectorMovies))
         {
@@ -677,7 +727,7 @@ public sealed class CollectionService
             BuiltAt = DateTime.UtcNow,
             Config = configKey,
             MovieIds = items.OfType<Movie>().Select(item => item.Id).ToHashSet(),
-            Collections = featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(Biggest(directors)).ToList()
+            Collections = featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(directors.OrderBy(director => director.Name, StringComparer.OrdinalIgnoreCase)).ToList()
         };
     }
 

@@ -76,6 +76,22 @@ public sealed partial class TrailerService
     }
 
     /// <summary>
+    /// Checks videos found elsewhere (season trailers, an admin's choice): the playable ones, with
+    /// their YouTube titles, in the order given.
+    /// </summary>
+    /// <param name="videos">Video ids and the titles they came with.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<List<TrailerInfo>> CheckVideosAsync(IEnumerable<(string Key, string? Title, int? Season)> videos, CancellationToken cancellationToken)
+    {
+        var list = videos.DistinctBy(video => video.Key).Take(MaxTrailers * 2).ToList();
+        var checks = await Task.WhenAll(list.Select(video => CheckAsync(video.Key, cancellationToken))).ConfigureAwait(false);
+        return list.Zip(checks)
+            .Where(pair => pair.Second.Playable)
+            .Select(pair => new TrailerInfo { Key = pair.First.Key, Title = pair.Second.Title ?? pair.First.Title, Season = pair.First.Season })
+            .ToList();
+    }
+
+    /// <summary>
     /// Extracts the video id from a YouTube link, or null if it isn't one.
     /// </summary>
     /// <param name="url">The link.</param>
@@ -178,4 +194,10 @@ public sealed class TrailerInfo
     /// Gets or sets the video's title on YouTube, if known.
     /// </summary>
     public string? Title { get; set; }
+
+    /// <summary>
+    /// Gets or sets the season it's the trailer of, for a show's season trailers.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? Season { get; set; }
 }

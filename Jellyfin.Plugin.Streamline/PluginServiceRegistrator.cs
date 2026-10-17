@@ -18,6 +18,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<WatchlistService>();
         serviceCollection.AddSingleton<TrailerService>();
         serviceCollection.AddSingleton<TrailerFinder>();
+        serviceCollection.AddSingleton<TrailerOverrides>();
+        serviceCollection.AddSingleton<SeasonTrailerService>();
         serviceCollection.AddSingleton<IdentityService>();
         serviceCollection.AddSingleton<ComingSoonService>();
         serviceCollection.AddSingleton<CollectionService>();
