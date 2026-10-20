@@ -135,6 +135,58 @@ public sealed class GenreTasteService
         return clean;
     }
 
+    /// <summary>
+    /// Gets a user's own Collections page choices.
+    /// </summary>
+    /// <param name="userId">The user.</param>
+    public CollectionPrefs GetCollectionPrefs(Guid userId)
+    {
+        lock (_fileLock)
+        {
+            var path = Path.Combine(Folder("collectionprefs"), userId.ToString("N") + ".json");
+            try
+            {
+                return File.Exists(path) ? JsonSerializer.Deserialize<CollectionPrefs>(File.ReadAllText(path), FileJson) ?? new CollectionPrefs() : new CollectionPrefs();
+            }
+            catch (Exception ex) when (ex is IOException or JsonException)
+            {
+                _logger.LogWarning(ex, "Couldn't read the collections choices for {User}.", userId);
+                return new CollectionPrefs();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Saves a user's own Collections page choices.
+    /// </summary>
+    /// <param name="userId">The user.</param>
+    /// <param name="prefs">The choices.</param>
+    public CollectionPrefs SaveCollectionPrefs(Guid userId, CollectionPrefs prefs)
+    {
+        static List<string> Clean(IEnumerable<string>? ids, int most) => (ids ?? [])
+            .Select(id => id?.Trim() ?? string.Empty)
+            .Where(id => id.Length is > 0 and <= 120)
+            .Distinct(StringComparer.Ordinal)
+            .Take(most)
+            .ToList();
+
+        var clean = new CollectionPrefs
+        {
+            Sections = Clean(prefs.Sections, 20),
+            HiddenSections = Clean(prefs.HiddenSections, 20),
+            Pinned = Clean(prefs.Pinned, 60),
+            Hidden = Clean(prefs.Hidden, 500)
+        };
+        clean.Hidden.RemoveAll(clean.Pinned.Contains);
+        lock (_fileLock)
+        {
+            Directory.CreateDirectory(Folder("collectionprefs"));
+            File.WriteAllText(Path.Combine(Folder("collectionprefs"), userId.ToString("N") + ".json"), JsonSerializer.Serialize(clean, FileJson));
+        }
+
+        return clean;
+    }
+
     // A title's weight for a user: a rating if they gave one, else how much they watched it,
     // plus a bit for a favorite.
     private double Weight(User user, BaseItem title)
@@ -317,5 +369,24 @@ public sealed class GenrePrefs
     public List<string> Pinned { get; set; } = [];
 
     /// <summary>Gets or sets the genres never shown as a row.</summary>
+    public List<string> Hidden { get; set; } = [];
+}
+
+/// <summary>
+/// One user's own Collections page: the order of its sections, sections and collections they
+/// don't care about, and collections pinned to the top.
+/// </summary>
+public sealed class CollectionPrefs
+{
+    /// <summary>Gets or sets the sections in the user's order ("featured", "universe", "anime"...).</summary>
+    public List<string> Sections { get; set; } = [];
+
+    /// <summary>Gets or sets the sections left out.</summary>
+    public List<string> HiddenSections { get; set; } = [];
+
+    /// <summary>Gets or sets the collections (by id) pinned to the top, in this order.</summary>
+    public List<string> Pinned { get; set; } = [];
+
+    /// <summary>Gets or sets the collections (by id) left out.</summary>
     public List<string> Hidden { get; set; } = [];
 }

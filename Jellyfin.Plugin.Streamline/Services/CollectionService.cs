@@ -30,7 +30,9 @@ namespace Jellyfin.Plugin.Streamline.Services;
 /// in it, else from 3 movies.</item>
 /// <item>Movie series from TMDb (James Bond, Toy Story...), shown from 3 movies: two is a sequel,
 /// not a collection.</item>
-/// <item>Directors with 4 or more movies here.</item>
+/// <item>Anime by kind (Shōnen, Isekai, Anime Movies...) and TV: shows by channel or streaming
+/// service (Netflix, HBO, BBC...) and kinds of TV (Miniseries, Reality, Kids' Shows...).</item>
+/// <item>Directors with 4 or more movies here (not when they only made one series' films).</item>
 /// <item>Collections made in Jellyfin itself, always shown.</item>
 /// </list>
 /// Everything is per user: only titles the user can see count.
@@ -103,10 +105,8 @@ public sealed class CollectionService
         new("dreamworks", "DreamWorks Animation", ["dreamworks"], StudioContains: ["dreamworks animation"]),
         new("christmas", "Christmas", ["christmas", "xmas", "holiday"], Tags: ["christmas", "christmas eve", "santa claus", "christmas party", "christmas tree"]),
         new("halloween", "Halloween", ["halloween", "spooky"], Tags: ["halloween", "trick or treating"]),
-        new("a24", "A24", ["a24"], StudioContains: ["a24"]),
         new("stephen-king", "Stephen King", ["stephen king", "king"], Tags: ["based on stephen king's work", "stephen king"], People: ["Stephen King"]),
         new("video-games", "Video Game Adaptations", ["video game", "game"], Tags: ["based on video game", "video game adaptation"]),
-        new("short", "Under 90 Minutes", ["short", "quick"], MaxMinutes: 90, MoviesOnly: true),
     ];
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
@@ -153,6 +153,106 @@ public sealed class CollectionService
         new("tinker-bell", "Tinker Bell", ["tinker bell", "disney fairies"], Prefixes: ["tinker bell"]),
         new("winnie-the-pooh", "Winnie the Pooh", ["pooh", "winnie"], Prefixes: ["winnie the pooh"], Titles: ["the many adventures of winnie the pooh", "the tigger movie", "piglet's big movie", "pooh's heffalump movie", "christopher robin"]),
         new("dragon-ball", "Dragon Ball", ["dragon ball", "dbz", "goku"], Prefixes: ["dragon ball"]),
+        new("evil-dead", "Evil Dead", ["evil dead", "ash", "deadites"], Prefixes: ["evil dead", "the evil dead", "ash vs evil dead"], Titles: ["army of darkness"]),
+    ];
+
+    // TMDb keywords that make an animation anime. TVDB-style metadata has an "Anime" genre too.
+    private static readonly HashSet<string> AnimeTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "anime", "shounen", "shonen", "seinen", "shoujo", "shojo", "josei", "isekai", "based on manga", "based on light novel", "donghua"
+    };
+
+    // Japanese animation studios, for anime movies that carry no anime keyword (Ghibli's). Only
+    // as a title's main (first) studio: Pixar and Illumination films list them for outsourced work.
+    private static readonly string[] AnimeStudios =
+    [
+        "studio ghibli", "toei animation", "madhouse", "bones", "mappa", "ufotable", "kyoto animation", "production i.g", "wit studio", "sunrise",
+        "a-1 pictures", "cloverworks", "studio trigger", "shaft", "david production", "j.c.staff", "studio deen", "olm", "pierrot", "toho animation",
+        "studio ponoc", "comix wave", "studio chizu", "science saru", "tms entertainment", "lerche", "silver link", "white fox", "doga kobo"
+    ];
+
+    /// <summary>
+    /// Whether a title is anime: the "Anime" genre, or an animation with an anime keyword or from
+    /// a Japanese animation studio as its main studio.
+    /// </summary>
+    /// <param name="item">The title.</param>
+    internal static bool IsAnime(BaseItem item)
+    {
+        if (HasGenre(item, "anime"))
+        {
+            return true;
+        }
+
+        return HasGenre(item, "animation", "animatie")
+            && (item.Tags.Any(AnimeTags.Contains) || (item.Studios.FirstOrDefault() is string studio && AnimeStudios.Contains(studio.Trim(), StringComparer.OrdinalIgnoreCase)));
+    }
+
+    private static bool HasGenre(BaseItem item, params string[] genres)
+        => item.Genres.Any(genre => genres.Any(wanted => genre.Contains(wanted, StringComparison.OrdinalIgnoreCase)));
+
+    private static bool HasTag(BaseItem item, params string[] tags)
+        => item.Tags.Any(tag => tags.Contains(tag, StringComparer.OrdinalIgnoreCase));
+
+    private static bool OnChannel(BaseItem item, params string[] channels)
+        => item.Studios.Any(studio => channels.Contains(studio.Trim(), StringComparer.OrdinalIgnoreCase));
+
+    private static Universe AnimeTheme(string id, string name, string[] aliases, Func<BaseItem, bool> test, bool moviesOnly = false)
+        => new("anime-" + id, name, aliases, MoviesOnly: moviesOnly, Test: item => IsAnime(item) && test(item));
+
+    // Anime, by kind: Jellyfin has one flat Animation genre, so these are what anime fans browse by.
+    private static readonly Universe[] AnimeThemes =
+    [
+        AnimeTheme("all", "All Anime", ["anime", "manga", "japanese animation"], _ => true),
+        AnimeTheme("movies", "Anime Movies", ["anime movie", "anime movies", "anime film"], _ => true, moviesOnly: true),
+        AnimeTheme("shonen", "Shōnen", ["shonen", "shounen"], item => HasTag(item, "shounen", "shonen")),
+        AnimeTheme("seinen", "Seinen", ["seinen"], item => HasTag(item, "seinen", "josei")),
+        AnimeTheme("isekai", "Isekai", ["isekai", "another world", "reincarnation"], item => HasTag(item, "isekai", "reincarnation", "transported to another world", "parallel world", "another world", "summoned to another world")),
+        AnimeTheme("action", "Action Anime", ["action anime"], item => HasGenre(item, "action", "actie", "martial arts")),
+        AnimeTheme("fantasy", "Fantasy Anime", ["fantasy anime"], item => HasGenre(item, "fantasy", "fantasie") || HasTag(item, "magic", "dark fantasy", "high fantasy")),
+        AnimeTheme("romance", "Romance Anime", ["romance anime", "shojo", "shoujo"], item => HasGenre(item, "romance", "romantiek") || HasTag(item, "romance", "shoujo", "shojo")),
+        AnimeTheme("comedy", "Comedy Anime", ["comedy anime"], item => HasGenre(item, "comedy", "komedie")),
+        AnimeTheme("dark", "Dark & Horror Anime", ["horror anime", "dark anime"], item => HasGenre(item, "horror") || HasTag(item, "gore", "dark fantasy", "psychological", "tragedy")),
+        AnimeTheme("scifi", "Sci-Fi & Mecha", ["mecha", "sci-fi anime", "robots"], item => HasGenre(item, "science fiction", "sci-fi") || HasTag(item, "mecha", "robot", "giant robot", "space")),
+        AnimeTheme("slice", "Slice of Life", ["slice of life", "iyashikei"], item => HasTag(item, "slice of life", "school life", "iyashikei", "cute girls doing cute things")),
+        AnimeTheme("sports", "Sports Anime", ["sports anime"], item => HasGenre(item, "sport") || HasTag(item, "sports", "volleyball", "basketball", "football (soccer)", "swimming", "baseball", "boxing")),
+        AnimeTheme("light-novels", "Based on Light Novels", ["light novel", "light novels"], item => HasTag(item, "based on light novel")),
+        AnimeTheme("donghua", "Donghua", ["donghua", "chinese animation"], item => HasTag(item, "donghua")),
+    ];
+
+    private static Universe Channel(string id, string name, string[] aliases, params string[] channels)
+        => new("tv-" + id, name, aliases, ShowsOnly: true, Test: item => OnChannel(item, channels));
+
+    private static Universe TvTheme(string id, string name, string[] aliases, Func<BaseItem, bool> test)
+        => new("tv-" + id, name, aliases, ShowsOnly: true, Test: test);
+
+    // Shows by where they come from (the network or streaming service, which Jellyfin keeps as
+    // the show's studio), and kinds of TV that aren't a genre.
+    private static readonly Universe[] TvThemes =
+    [
+        Channel("netflix", "Netflix", ["netflix"], "Netflix"),
+        Channel("hbo", "HBO", ["hbo", "max", "hbo max"], "HBO", "HBO Max", "Max"),
+        Channel("disney-plus", "Disney+", ["disney+", "disney plus"], "Disney+"),
+        Channel("prime", "Prime Video", ["prime", "prime video", "amazon"], "Prime Video", "Amazon", "Amazon Prime Video", "Freevee"),
+        Channel("apple", "Apple TV+", ["apple", "apple tv"], "Apple TV", "Apple TV+"),
+        Channel("paramount", "Paramount+", ["paramount", "paramount+"], "Paramount+", "Paramount+ with Showtime", "CBS All Access"),
+        Channel("hulu", "Hulu", ["hulu"], "Hulu"),
+        Channel("showtime", "Showtime", ["showtime"], "Showtime"),
+        Channel("fx", "FX", ["fx"], "FX", "FXX", "FX on Hulu"),
+        Channel("amc", "AMC", ["amc"], "AMC", "AMC+"),
+        Channel("starz", "Starz", ["starz"], "STARZ", "Starz"),
+        TvTheme("bbc", "BBC", ["bbc"], item => item.Studios.Any(studio => studio.StartsWith("BBC", StringComparison.OrdinalIgnoreCase))),
+        Channel("itv", "ITV", ["itv"], "ITV", "ITV1", "ITV2", "ITVX", "ITV Encore"),
+        Channel("channel-4", "Channel 4", ["channel 4", "e4"], "Channel 4", "E4", "All 4"),
+        Channel("k-drama", "K-Dramas", ["k-drama", "kdrama", "korean", "korea"], "tvN", "JTBC", "KBS1", "KBS2", "MBC", "ENA", "OCN", "Coupang Play", "TVING", "Channel A", "MBN"),
+        Channel("cartoon-network", "Cartoon Network & Adult Swim", ["cartoon network", "adult swim"], "Cartoon Network", "Adult Swim", "Boomerang"),
+        Channel("nickelodeon", "Nickelodeon", ["nickelodeon", "nick"], "Nickelodeon", "Nick Jr.", "Nicktoons", "Nick at Nite"),
+        Channel("disney-channel", "Disney Channel", ["disney channel", "disney junior", "disney xd"], "Disney Channel", "Disney Junior", "Disney XD", "Playhouse Disney"),
+        Channel("nat-geo", "National Geographic", ["national geographic", "nat geo"], "National Geographic", "Nat Geo Wild", "Nat Geo"),
+        TvTheme("miniseries", "Miniseries", ["miniseries", "mini-series", "limited series"], item => HasGenre(item, "mini-series", "miniseries") || HasTag(item, "miniseries", "limited series")),
+        TvTheme("reality", "Reality & Cooking", ["reality", "cooking", "game show", "competition"], item => HasGenre(item, "reality", "game show", "food", "travel") || HasTag(item, "reality", "reality tv", "cooking competition", "competition")),
+        TvTheme("kids", "Kids' Shows", ["kids", "children", "kinderen", "kinder"], item => HasGenre(item, "children", "kids") && !IsAnime(item)),
+        TvTheme("adult-animation", "Adult Animation", ["adult animation", "adult cartoons"], item => HasTag(item, "adult animation")),
+        TvTheme("true-crime", "True Crime", ["true crime"], item => HasGenre(item, "documentary", "documentaire") && HasTag(item, "true crime", "serial killer", "murder", "crime investigation")),
     ];
 
     // Extra search words for TMDb movie series people call something else.
@@ -416,18 +516,40 @@ public sealed class CollectionService
         return string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
+    // TMDb series names that read oddly once " Collection" is gone.
+    private static readonly Dictionary<string, string> BetterNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["The Bourne"] = "Bourne",
+        ["The Ultimate"] = "The Ultimate Gift",
+        ["Dreamworks' Pentateuch"] = "The Prince of Egypt",
+        ["Son of Batman"] = "DC Animated Movie Universe",
+    };
+
     private static string CleanCollectionName(string name)
     {
-        // TMDb calls them "James Bond Collection", "The Lord of the Rings Collection".
+        // TMDb calls them "James Bond Collection", "The Lord of the Rings Collection", and some
+        // "Tarzan (Animation) Collection" or "Hercule Poirot (Kenneth Branagh) Collection".
         const string Suffix = " Collection";
-        return name.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase) ? name[..^Suffix.Length] : name;
+        name = name.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase) ? name[..^Suffix.Length] : name;
+        var bracket = name.LastIndexOf(" (", StringComparison.Ordinal);
+        if (bracket > 0 && name.EndsWith(')'))
+        {
+            name = name[..bracket];
+        }
+
+        return BetterNames.GetValueOrDefault(name.Trim()) ?? name.Trim();
     }
 
     // Words a collection name can't be grouped by ("The Matrix" and "The Godfather").
     private static readonly HashSet<string> NotABrand = new(StringComparer.Ordinal)
     {
-        "the", "a", "an", "de", "het", "een", "la", "le", "les", "el", "der", "die", "das", "my", "star", "john", "big", "little", "new", "dark", "night", "black", "white", "red", "blue", "super", "mr", "mrs", "dr", "lord"
+        "the", "a", "an", "de", "het", "een", "la", "le", "les", "el", "der", "die", "das", "my", "star", "john", "big", "little", "new", "dark", "night", "black", "white", "red", "blue", "super", "mr", "mrs", "dr", "lord",
+        "top", "how", "what", "who", "why", "when", "where", "one", "two", "all", "love", "last", "first", "great", "best", "home", "old", "young", "man", "men", "girl", "girls", "boy", "boys", "day", "days", "war", "world", "king", "queen", "death", "dead", "life", "time", "space", "secret", "lost", "true", "bad", "good", "happy", "high", "american", "christmas", "ice", "fire", "blood"
     };
+
+    // Brand groups need this many TMDb series: two that start alike ("Top Gun", "Top Gear") are
+    // more likely chance than a brand.
+    private const int MinBrandSeries = 3;
 
     // The brand word a TMDb series could be grouped by: its name's first word, when every one
     // of its movies starts with it too.
@@ -455,8 +577,11 @@ public sealed class CollectionService
         return string.Join(' ', split[0].Take(Math.Max(1, count))).TrimEnd(':', '-', ',');
     }
 
+    // Release order, each title once: a second copy of a film (another edition or quality) has
+    // its own id but the same TMDb id, or the same name and year.
     private static List<Guid> InOrder(IEnumerable<BaseItem> items) => items
         .DistinctBy(item => item.Id)
+        .DistinctBy(item => (item is Movie ? "m" : "s") + (item.GetProviderId(MetadataProvider.Tmdb) ?? Normalize(item.Name) + "|" + item.ProductionYear))
         .OrderBy(item => item.PremiereDate ?? (item.ProductionYear is int year ? new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc) : DateTime.MaxValue))
         .ThenBy(item => item.SortName, StringComparer.OrdinalIgnoreCase)
         .Select(item => item.Id)
@@ -612,6 +737,21 @@ public sealed class CollectionService
             }
         }
 
+        // Anime by kind, and shows by channel or kind of TV. Same 3-title minimum as Featured.
+        var anime = new List<SnapshotEntry>();
+        var tv = new List<SnapshotEntry>();
+        foreach (var (themes, kind, list) in new[] { (AnimeThemes, "anime", anime), (TvThemes, "tv", tv) })
+        {
+            foreach (var theme in themes)
+            {
+                var members = items.Where(item => theme.Matches(item, people)).ToList();
+                if (members.Count >= MinFeaturedItems && names.Add(Normalize(theme.Name)))
+                {
+                    list.Add(Info(theme.Id, theme.Name, kind, theme.Aliases, members, MinFeaturedItems));
+                }
+            }
+        }
+
         // Directors with a body of work here: their movies, and shows they shaped.
         foreach (var group in items.Where(item => item is Movie or MediaBrowser.Controller.Entities.TV.Series)
             .SelectMany(title => CreditsOf(title).Directors.Select(name => (Name: name, Movie: title)))
@@ -620,6 +760,9 @@ public sealed class CollectionService
         {
             directors.Add(Info("director-" + Normalize(group.Key).Replace(' ', '-'), group.Key, "director", [], group.Select(entry => entry.Movie).ToList(), MinDirectorMovies));
         }
+
+        // Directors who only made one series' movies (the Pokémon films, the Barbie films) add
+        // nothing that series doesn't already show: left out once the series is known, below.
 
         // Collections made in Jellyfin (by hand, or by its "add movies to collections" option):
         // only when the admin wants them; by default the page is Streamline's own.
@@ -700,10 +843,13 @@ public sealed class CollectionService
         }
 
         // TMDb splits some brands into many small series ("Barbie Fairytopia", "Barbie Mariposa",
-        // and so on). Series whose names start with the same word, and whose movies all start with it too,
+        // and so on). Three or more series whose names start with the same word, and whose movies all start with it too,
         // are one collection, named by what their names have in common.
+        var brandCounts = pending.Select(entry => SharedWord(entry.Name, entry.Movies)).OfType<string>().GroupBy(word => word).ToDictionary(group => group.Key, group => group.Count());
+        string BrandKey((string Key, string Name, string[] Aliases, List<BaseItem> Movies) entry)
+            => SharedWord(entry.Name, entry.Movies) is string word && brandCounts[word] >= MinBrandSeries ? word : "\u0000" + entry.Key;
         foreach (var cluster in pending
-            .GroupBy(entry => SharedWord(entry.Name, entry.Movies) ?? "\u0000" + entry.Key)
+            .GroupBy(BrandKey)
             .Select(group => group.ToList()))
         {
             var movies = cluster.SelectMany(entry => entry.Movies).DistinctBy(movie => movie.Id).ToList();
@@ -717,17 +863,19 @@ public sealed class CollectionService
             series.Add(Info(id, name, "collection", cluster.SelectMany(entry => entry.Aliases).Distinct().ToList(), movies, MinTmdbItems));
         }
 
+        directors.RemoveAll(director => universes.Concat(series).Any(other => director.ItemIds.Count(other.ItemIds.Contains) * 4 >= director.ItemIds.Count * 3));
+
         static IEnumerable<SnapshotEntry> Biggest(List<SnapshotEntry> list) => list
             .OrderByDescending(collection => collection.ItemIds.Count)
             .ThenBy(collection => collection.Name, StringComparer.OrdinalIgnoreCase);
 
-        // Featured keep their curated order; then franchises, movie series, decades, directors.
+        // Featured, anime and TV keep their curated order; then franchises, movie series, decades, directors.
         return new Snapshot
         {
             BuiltAt = DateTime.UtcNow,
             Config = configKey,
             MovieIds = items.OfType<Movie>().Select(item => item.Id).ToHashSet(),
-            Collections = featured.Concat(Biggest(universes)).Concat(Biggest(series)).Concat(decades).Concat(directors.OrderBy(director => director.Name, StringComparer.OrdinalIgnoreCase)).ToList()
+            Collections = featured.Concat(Biggest(universes)).Concat(anime).Concat(tv).Concat(Biggest(series)).Concat(decades).Concat(directors.OrderBy(director => director.Name, StringComparer.OrdinalIgnoreCase)).ToList()
         };
     }
 
@@ -785,11 +933,11 @@ public sealed class CollectionService
     /// <param name="StudioContains">Studios, by part of the name ("walt disney").</param>
     /// <param name="People">Directors or writers (movies).</param>
     /// <param name="TitleYears">"title|year" pairs; the year may be one off.</param>
-    /// <param name="MaxMinutes">Movies at most this long.</param>
     /// <param name="MoviesOnly">Only movies.</param>
     /// <param name="MinYear">From this year (release year; a show's first year).</param>
     /// <param name="MaxYear">Up to this year.</param>
     /// <param name="ShowsOnly">Only shows.</param>
+    /// <param name="Test">Decides by itself (anime themes, TV channels), instead of the lists.</param>
     internal sealed record Universe(
         string Id,
         string Name,
@@ -803,11 +951,11 @@ public sealed class CollectionService
         string[]? StudioContains = null,
         string[]? People = null,
         string[]? TitleYears = null,
-        int MaxMinutes = 0,
         bool MoviesOnly = false,
         int MinYear = 0,
         int MaxYear = 0,
-        bool ShowsOnly = false)
+        bool ShowsOnly = false,
+        Func<BaseItem, bool>? Test = null)
     {
         private readonly HashSet<string> _titles = (Titles ?? []).Select(Normalize).ToHashSet(StringComparer.Ordinal);
         private readonly string[] _prefixes = (Prefixes ?? []).Select(Normalize).ToArray();
@@ -830,9 +978,9 @@ public sealed class CollectionService
                 return item.ProductionYear is int made && made >= MinYear && (MaxYear == 0 || made <= MaxYear);
             }
 
-            if (MaxMinutes > 0)
+            if (Test is not null)
             {
-                return item.RunTimeTicks is long ticks && ticks > 0 && TimeSpan.FromTicks(ticks).TotalMinutes <= MaxMinutes;
+                return Test(item);
             }
 
             if (Collections is { Length: > 0 } && item is Movie && Collections.Contains(item.GetProviderId(MetadataProvider.TmdbCollection)))

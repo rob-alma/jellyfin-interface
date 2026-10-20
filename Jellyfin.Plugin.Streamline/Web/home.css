@@ -2434,17 +2434,19 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 
 /* ---- Customize genre rows ------------------------------------------------------------------ */
 
-/* The bar above the genre rows: full width, a clear divide from the rows above it. */
+/* The bar above the genre rows: in the accent colour, so it stands out from the rows. */
 .sl-genre-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1em;
     margin: 0.4rem var(--sl-gutter) 1.1rem;
-    padding: 0.7em 0.9em 0.7em 1.1em;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.03);
+    padding: 0.75em 0.9em 0.75em 1.1em;
+    border-radius: 10px;
+    background: var(--sl-accent);
+    background: linear-gradient(100deg, var(--sl-accent), #7b3c94);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    color: #fff;
 }
 
 .sl-genre-bar-text {
@@ -2459,8 +2461,26 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
 }
 
 .sl-genre-bar-sub {
-    color: var(--sl-text-dim);
+    color: rgba(255, 255, 255, 0.85);
     font-size: 0.82rem;
+}
+
+/* On the purple bar the button is white, so it reads as the thing to press. */
+.sl-genre-bar .sl-genre-bar-btn {
+    border-color: #fff;
+    background: #fff;
+    color: #5e2a73;
+}
+
+.sl-genre-bar .sl-genre-bar-btn:hover,
+.sl-genre-bar .sl-genre-bar-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: #fff;
+}
+
+/* Customize on the Collections page sits at the right of the heading. */
+.sl-collections-customize {
+    margin-left: auto;
 }
 
 .sl-genre-bar-btn {
@@ -2544,11 +2564,51 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     accent-color: var(--sl-accent);
 }
 
+.sl-dialog-group {
+    margin: 0.9em 0 0.35em;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sl-text-dim);
+}
+
+.sl-dialog-filter {
+    box-sizing: border-box;
+    width: 100%;
+    margin-bottom: 0.5em;
+    padding: 0.5em 0.8em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: inherit;
+}
+
+.sl-dialog-filter:focus {
+    border-color: var(--sl-accent);
+    outline: none;
+}
+
+.sl-dialog-kind {
+    display: block;
+    color: var(--sl-text-dim);
+    font-size: 0.75rem;
+    font-weight: 400;
+}
+
 .sl-dialog-list {
     flex: 1;
     overflow-y: auto;
     margin: 0 -6px;
     padding: 0 6px;
+}
+
+/* The few sections: always fully shown; the long collection list below scrolls. */
+.sl-dialog-list.sl-dialog-list--short {
+    flex: none;
+    max-height: none;
+    overflow: visible;
 }
 
 .sl-dialog-row {
@@ -2858,7 +2918,8 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     }
 
     .sl-genre-bar > * + *,
-    .sl-genre-bar-btn > * + * {
+    .sl-genre-bar-btn > * + *,
+    .sl-back > * + * {
         margin-left: 0.25em;
     }
 
@@ -3029,33 +3090,46 @@ html.sl-nav-on.sl-admin body:not(.dashboardDocument) .mainDrawer .sidebarHeader 
     flex-wrap: wrap;
 }
 
-/* ---- Back arrow: top left, every device; Jellyfin's own back and home buttons make way ----- */
+/* ---- Back: a small pill just under the logo, only on pages you went into ------------------ */
 
 .sl-back {
     display: none;
 }
 
-html.sl-nav-on body:not(.dashboardDocument) .skinHeader .sl-back {
-    width: 2.6em;
-    height: 2.6em;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: none;
-    color: inherit;
-    cursor: pointer;
+html.sl-nav-on:not(.sl-main-page) body:not(.dashboardDocument) > .sl-back {
+    position: fixed;
+    z-index: 990;
+    top: var(--sl-back-top, 3.5em);
+    left: var(--sl-back-left, var(--sl-gutter));
+    margin-top: 0.5em;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    flex: none;
-    margin-right: 0.15em;
+    gap: 0.3em;
+    padding: 0.35em 0.9em 0.35em 0.6em;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(20, 20, 20, 0.72);
+    color: #fff;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
 }
 
+html.sl-nav-on:not(.sl-main-page) body:not(.dashboardDocument) > .sl-back .material-icons {
+    font-size: 1.15rem;
+}
+
+/* Jellyfin's own back and home buttons make way for it. */
 html.sl-nav-on body:not(.dashboardDocument) .skinHeader .headerBackButton,
 html.sl-nav-on body:not(.dashboardDocument) .skinHeader .headerHomeButton {
     display: none !important;
 }
 
-html.sl-nav-on .skinHeader .sl-back:hover {
-    background: rgba(255, 255, 255, 0.1);
+html.sl-nav-on body > .sl-back:hover,
+html.sl-nav-on body > .sl-back:focus-visible {
+    border-color: var(--sl-accent);
+    outline: none;
 }

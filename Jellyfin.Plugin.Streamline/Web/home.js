@@ -345,9 +345,9 @@
 
     const collectionsHref = () => browseHref(HOME_SCOPE, { sl: "collections" });
 
-    // Collections too broad to be "part of" (Under 90 Minutes, decades): left out of item pages
-    // and the Home row.
-    const isBroadCollection = (collection) => collection.Kind === "decade" || collection.Id === "featured-short";
+    // Collections too broad to be "part of" (decades, All Anime): left out of item pages and the
+    // Home row.
+    const isBroadCollection = (collection) => collection.Kind === "decade" || collection.Id === "anime-all";
     const collectionHref = (collection) => browseHref(HOME_SCOPE, { sl: "collection", id: collection.Id });
 
     // A big collection's list only has its first titles; the rest come when it's opened.
@@ -908,14 +908,15 @@
         Fantasy: ["Fantasy", "Fantasie"],
         "Science Fiction": ["Science Fiction", "Sci-Fi", "Sciencefiction", "Science-fiction"],
         Romance: ["Romance", "Romantiek", "Romantisch"],
-        Thriller: ["Thriller"],
+        // TVDB (which some servers use for shows) says Suspense, Children, Musical and Anime.
+        Thriller: ["Thriller", "Suspense"],
         Horror: ["Horror"],
         Mystery: ["Mystery", "Mysterie"],
-        Animation: ["Animation", "Animatie"],
-        Family: ["Family", "Familie"],
+        Animation: ["Animation", "Animatie", "Anime"],
+        Family: ["Family", "Familie", "Children", "Kids"],
         War: ["War", "Oorlog"],
         History: ["History", "Historie", "Historisch", "Geschiedenis"],
-        Music: ["Music", "Muziek"],
+        Music: ["Music", "Muziek", "Musical"],
         Western: ["Western"],
         Documentary: ["Documentary", "Documentaire"]
     };
@@ -1068,7 +1069,7 @@
             if (!types.includes(entry.item.Type)) {
                 return sum;
             }
-            const hit = def ? (entry.item.Tags || []).some((tag) => def.tags.includes(tag.toLowerCase())) : matchesGenre(entry.item, name);
+            const hit = def ? isAnime(entry.item) : matchesGenre(entry.item, name);
             return hit ? sum + entry.weight : sum;
         }, 0);
     }
@@ -1193,18 +1194,35 @@
         { name: "Christmas & Holidays", tags: ["christmas", "holiday", "christmas eve", "santa claus", "halloween"] },
         // Documentaries about nature: the Documentary genre and a nature keyword, both.
         { name: "Nature Documentaries", genres: ["Documentary"], tags: ["nature", "wildlife", "animals", "nature documentary", "ocean", "planet earth", "environment", "animal behavior", "natural history", "wilderness"] },
-        { name: "Anime", tags: ["anime", "anime inspired", "shounen", "seinen", "isekai"], genres: ["Animation"] }
+        // Anime: the Anime genre (TVDB), or an animation with an anime keyword (TMDb).
+        { name: "Anime", tags: ["anime", "shounen", "seinen", "shoujo", "josei", "isekai", "based on manga", "based on light novel", "donghua"], genres: ["Animation"], anime: true }
     ];
 
     const ANIME = SUBGENRES.find((def) => def.name === "Anime");
+
+    function isAnime(item) {
+        const genres = (item.Genres || []).map((genre) => genre.toLowerCase());
+        return genres.includes("anime") || (matchesGenre(item, "Animation") && (item.Tags || []).some((tag) => ANIME.tags.includes(tag.toLowerCase())));
+    }
 
     // Everything in a sub-genre (up to max), cached per page so its row, its tile on the genres
     // page and its own page share one fetch.
     function subgenreItems(scope, def, max) {
         return cached(`${scope.key}:sub:${def.name}`, STABLE_ROW_TTL_MS, async () => {
+            if (def.anime) {
+                const [tagged, genre] = await Promise.all([
+                    scopeQuery(scope, { Tags: def.tags.join("|"), SortBy: "SortName", Limit: Math.max(max, 500), Fields: `${ITEM_FIELDS},Tags` }),
+                    scopeQuery(scope, { Genres: "Anime", SortBy: "SortName", Limit: max, Fields: `${ITEM_FIELDS},Tags` })
+                ]);
+                const seen = new Set();
+                return genre.concat(tagged.filter(isAnime))
+                    .filter((item) => !seen.has(item.Id) && seen.add(item.Id))
+                    .sort((x, y) => String(x.SortName || x.Name).localeCompare(String(y.SortName || y.Name)))
+                    .slice(0, max);
+            }
             if (def.tags) {
                 // A keyword, plus a genre when there is one (Nature Documentaries: a nature
-                // keyword on a documentary; Anime: an anime keyword on an animation).
+                // keyword on a documentary).
                 const tagged = await scopeQuery(scope, { Tags: def.tags.join("|"), SortBy: "SortName", Limit: def.genres ? Math.max(max, 500) : max, Fields: `${ITEM_FIELDS},Tags` });
                 return def.genres ? tagged.filter((item) => def.genres.every((genre) => matchesGenre(item, genre))).slice(0, max) : tagged;
             }
@@ -1383,7 +1401,10 @@
 
         // Home: the featured collections and franchises as poster tiles.
         async collections() {
-            const list = (await loadCollections()).filter((collection) => !isBroadCollection(collection) && ["featured", "universe"].includes(collection.Kind));
+            // The person's pinned collections first; nothing they hid.
+            const [collections, prefs] = await Promise.all([loadCollections(), loadCollectionPrefs()]);
+            const { pinned, rest } = visibleCollections(collections, prefs);
+            const list = pinned.concat(rest.filter((collection) => !isBroadCollection(collection) && ["featured", "universe"].includes(collection.Kind)));
             const tiles = await collectionTiles(list.slice(0, limit()));
             return [{
                 key: "collections",
@@ -2619,7 +2640,7 @@
     }
 
     function removeNav() {
-        document.querySelectorAll(".skinHeader .sl-nav, .skinHeader .sl-logo, .skinHeader .sl-back, .sl-tabbar").forEach((node) => node.remove());
+        document.querySelectorAll(".skinHeader .sl-nav, .skinHeader .sl-logo, .sl-back, .sl-tabbar").forEach((node) => node.remove());
         document.documentElement.classList.remove("sl-nav-on");
     }
 
@@ -3133,44 +3154,82 @@
             });
     }
 
-    // Collections: the same poster tiles as Genres. Universes (movies and shows together)
-    // big, then movie series.
+    // The Collections page's sections, in their standard order. Featured, franchises and anime
+    // get big tiles; the rest smaller.
+    const COLLECTION_SECTIONS = [
+        { kind: "featured", title: "Featured", headline: true },
+        { kind: "universe", title: "Franchises", headline: true },
+        { kind: "anime", title: "Anime", headline: true },
+        { kind: "tv", title: "TV channels & kinds of TV", headline: false },
+        { kind: "collection", title: "Movie series", headline: false },
+        { kind: "decade", title: "Decades", headline: false },
+        { kind: "director", title: "Directors", headline: false }
+    ];
+
+    function loadCollectionPrefs() {
+        return cached("collection-prefs", STABLE_ROW_TTL_MS, async () => Object.assign({ Sections: [], HiddenSections: [], Pinned: [], Hidden: [] }, await getJson("Streamline/CollectionPrefs").catch(() => null)));
+    }
+
+    // The sections in this person's order (any they haven't placed keep their standard spot at
+    // the end), and whether each is hidden.
+    function orderedSections(prefs) {
+        const known = (prefs.Sections || []).map((kind) => COLLECTION_SECTIONS.find((section) => section.kind === kind)).filter(Boolean);
+        return known.concat(COLLECTION_SECTIONS.filter((section) => !known.includes(section)))
+            .map((section) => Object.assign({}, section, { hidden: (prefs.HiddenSections || []).includes(section.kind) }));
+    }
+
+    // A person's collections: their pinned ones first (in their order), hidden ones and hidden
+    // sections left out.
+    function visibleCollections(collections, prefs) {
+        const hiddenKinds = new Set(prefs.HiddenSections || []);
+        const hidden = new Set(prefs.Hidden || []);
+        const pinned = (prefs.Pinned || []).map((id) => collections.find((collection) => collection.Id === id)).filter(Boolean);
+        return {
+            pinned,
+            rest: collections.filter((collection) => !hidden.has(collection.Id) && !hiddenKinds.has(collection.Kind) && !pinned.includes(collection))
+        };
+    }
+
+    // Collections: the same poster tiles as Genres, in sections, the way each person set them up.
     function buildCollectionsPage(root) {
-        const { subtitle } = buildBrowseHead(root, "Collections", "Themes, franchises, directors and movie series");
-        // Section labels, so it's clear why some tiles are bigger.
+        const { head, subtitle } = buildBrowseHead(root, "Collections", "Themes, franchises, anime, TV channels, directors and movie series");
+        const customize = el("button", "sl-genre-bar-btn sl-collections-customize");
+        customize.type = "button";
+        customize.appendChild(icon("tune"));
+        customize.appendChild(el("span", null, "Customize"));
+        customize.setAttribute("aria-label", "Customize your collections page");
+        customize.addEventListener("click", () => openCollectionCustomizer());
+        head.appendChild(customize);
         const body = el("div", "sl-genre-sections");
         body.appendChild(el("div", "sl-genre-grid sl-genre-grid--loading"));
         body.firstChild.append(...Array.from({ length: 12 }, () => el("div", "sl-skeleton sl-skeleton--tile")));
         root.appendChild(body);
         root.appendChild(buildFooter());
 
-        loadCollections()
-            .then(collectionTiles)
-            .then((tiles) => {
+        Promise.all([loadCollections(), loadCollectionPrefs()])
+            .then(async ([collections, prefs]) => {
+                const { pinned, rest } = visibleCollections(collections, prefs);
+                const tiles = await collectionTiles(pinned.concat(rest));
+                return { tiles, pinnedCount: pinned.length, prefs };
+            })
+            .then(({ tiles, pinnedCount, prefs }) => {
                 if (!body.isConnected) {
                     return;
                 }
                 if (!tiles.length) {
-                    body.replaceChildren(el("p", "sl-empty", "No collections yet. A movie series shows up here once 3 of its movies are on the server, a franchise once it has a movie and a show (or a show and its spin-off)."));
+                    body.replaceChildren(el("p", "sl-empty", "No collections to show. A movie series shows up here once 3 of its movies are on the server, a franchise once it has a movie and a show (or a show and its spin-off). Hidden something by mistake? Customize puts it back."));
                     return;
                 }
                 subtitle.textContent = `${tiles.length} ${tiles.length === 1 ? "collection" : "collections"}`;
-                // Handy themed ones and franchises big; directors and movie series smaller.
-                const sections = [
-                    { kind: "featured", title: "Featured", headline: true },
-                    { kind: "universe", title: "Franchises", headline: true },
-                    { kind: "collection", title: "Movie series", headline: false },
-                    { kind: "decade", title: "Decades", headline: false },
-                    { kind: "director", title: "Directors", headline: false }
-                ].map((section) => Object.assign(section, { tiles: tiles.filter((tile) => tile.kind === section.kind) }));
+                const sections = [{ kind: "pinned", title: "Pinned", headline: true, tiles: tiles.slice(0, pinnedCount) }]
+                    .concat(orderedSections(prefs).filter((section) => !section.hidden)
+                        .map((section) => Object.assign(section, { tiles: tiles.slice(pinnedCount).filter((tile) => tile.kind === section.kind) })));
                 body.replaceChildren(...sections.filter((section) => section.tiles.length).map((section) => {
-                    const list = section.tiles;
-                    const headline = section.headline;
                     const block = el("section", "sl-genre-section");
                     block.setAttribute("aria-label", section.title);
                     block.appendChild(el("h2", "sl-row-title sl-collection-heading", section.title));
-                    const grid = el("div", headline ? "sl-genre-grid sl-genre-grid--headline" : "sl-genre-grid");
-                    list.forEach((tile) => grid.appendChild(buildGenreTile(tile)));
+                    const grid = el("div", section.headline ? "sl-genre-grid sl-genre-grid--headline" : "sl-genre-grid");
+                    section.tiles.forEach((tile) => grid.appendChild(buildGenreTile(tile)));
                     block.appendChild(grid);
                     return block;
                 }));
@@ -3179,6 +3238,185 @@
                 console.warn("[Streamline] Could not load the collections.", error);
                 body.replaceChildren(el("p", "sl-empty", "Couldn't load the collections."));
             });
+    }
+
+    // Customize the Collections page, for this person only: move sections up or down or hide
+    // them, pin collections to the top, hide collections they don't care about.
+    async function openCollectionCustomizer() {
+        if (document.querySelector(".sl-dialog")) {
+            return;
+        }
+        const [collections, prefs] = await Promise.all([loadCollections(), loadCollectionPrefs()]);
+        let sections = orderedSections(prefs);
+        let pinned = (prefs.Pinned || []).filter((id) => collections.some((collection) => collection.Id === id));
+        let hidden = (prefs.Hidden || []).slice();
+        let filter = "";
+
+        const overlay = el("div", "sl-dialog");
+        const panel = el("div", "sl-dialog-panel");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute("aria-modal", "true");
+        panel.setAttribute("aria-label", "Your collections page");
+        overlay.appendChild(panel);
+        panel.appendChild(el("h2", "sl-dialog-title", "Your collections page"));
+        panel.appendChild(el("p", "sl-dialog-sub", "Only for you. Put the sections you care about first, hide the ones you don't, and pin your favourite collections to the top."));
+
+        const button = (iconName, label, on, onClick) => {
+            const b = el("button", `sl-dialog-btn${on ? " is-on" : ""}`);
+            b.type = "button";
+            b.setAttribute("aria-label", label);
+            b.setAttribute("aria-pressed", String(!!on));
+            b.title = label;
+            b.appendChild(icon(iconName));
+            b.addEventListener("click", onClick);
+            return b;
+        };
+
+        panel.appendChild(el("h3", "sl-dialog-group", "Sections"));
+        const sectionList = el("div", "sl-dialog-list sl-dialog-list--short");
+        panel.appendChild(sectionList);
+        const renderSections = () => {
+            sectionList.replaceChildren(...sections.map((section, at) => {
+                const line = el("div", `sl-dialog-row${section.hidden ? " is-hidden" : ""}`);
+                line.appendChild(el("span", "sl-dialog-name", section.title));
+                const actions = el("span", "sl-dialog-actions");
+                const move = (by) => () => {
+                    const next = sections.slice();
+                    const [moved] = next.splice(at, 1);
+                    next.splice(Math.max(0, Math.min(next.length, at + by)), 0, moved);
+                    sections = next;
+                    renderSections();
+                    renderCollections();
+                };
+                actions.appendChild(button("arrow_upward", `Move ${section.title} up`, false, move(-1)));
+                actions.appendChild(button("arrow_downward", `Move ${section.title} down`, false, move(1)));
+                actions.appendChild(button(section.hidden ? "visibility_off" : "visibility", `${section.hidden ? "Show" : "Hide"} ${section.title}`, section.hidden, () => {
+                    sections = sections.map((other) => (other === section ? Object.assign({}, other, { hidden: !other.hidden }) : other));
+                    renderSections();
+                }));
+                line.appendChild(actions);
+                return line;
+            }));
+        };
+
+        panel.appendChild(el("h3", "sl-dialog-group", "Collections"));
+        const search = el("input", "sl-dialog-filter");
+        search.type = "search";
+        search.placeholder = "Find a collection";
+        search.setAttribute("aria-label", "Find a collection");
+        search.addEventListener("input", () => {
+            filter = searchWords(search.value);
+            renderCollections();
+        });
+        panel.appendChild(search);
+        const list = el("div", "sl-dialog-list");
+        panel.appendChild(list);
+        const sectionTitle = (kind) => (COLLECTION_SECTIONS.find((section) => section.kind === kind) || { title: "" }).title;
+        const renderCollections = () => {
+            const isPinned = (id) => pinned.includes(id);
+            const isHidden = (id) => hidden.includes(id);
+            const matching = collections.filter((collection) => !filter || searchWords(collection.Name).includes(filter));
+            const rows = pinned.map((id) => matching.find((collection) => collection.Id === id)).filter(Boolean)
+                .concat(sections.flatMap((section) => matching.filter((collection) => collection.Kind === section.kind && !isPinned(collection.Id))));
+            list.replaceChildren(...rows.map((collection) => {
+                const line = el("div", `sl-dialog-row${isHidden(collection.Id) ? " is-hidden" : ""}${isPinned(collection.Id) ? " is-pinned" : ""}`);
+                const name = el("span", "sl-dialog-name", collection.Name);
+                name.appendChild(el("span", "sl-dialog-kind", sectionTitle(collection.Kind)));
+                line.appendChild(name);
+                const actions = el("span", "sl-dialog-actions");
+                if (isPinned(collection.Id)) {
+                    const at = pinned.indexOf(collection.Id);
+                    const move = (by) => () => {
+                        const next = pinned.slice();
+                        next.splice(at, 1);
+                        next.splice(Math.max(0, Math.min(next.length, at + by)), 0, collection.Id);
+                        pinned = next;
+                        renderCollections();
+                    };
+                    actions.appendChild(button("arrow_upward", `Move ${collection.Name} up`, false, move(-1)));
+                    actions.appendChild(button("arrow_downward", `Move ${collection.Name} down`, false, move(1)));
+                }
+                actions.appendChild(button("push_pin", `${isPinned(collection.Id) ? "Unpin" : "Pin"} ${collection.Name}`, isPinned(collection.Id), () => {
+                    pinned = isPinned(collection.Id) ? pinned.filter((id) => id !== collection.Id) : pinned.concat([collection.Id]);
+                    hidden = hidden.filter((id) => id !== collection.Id);
+                    renderCollections();
+                }));
+                actions.appendChild(button(isHidden(collection.Id) ? "visibility_off" : "visibility", `${isHidden(collection.Id) ? "Show" : "Hide"} ${collection.Name}`, isHidden(collection.Id), () => {
+                    hidden = isHidden(collection.Id) ? hidden.filter((id) => id !== collection.Id) : hidden.concat([collection.Id]);
+                    pinned = pinned.filter((id) => id !== collection.Id);
+                    renderCollections();
+                }));
+                line.appendChild(actions);
+                return line;
+            }));
+            if (!rows.length) {
+                list.appendChild(el("p", "sl-dialog-sub", "No collection by that name."));
+            }
+        };
+        renderSections();
+        renderCollections();
+
+        const footer = el("div", "sl-dialog-footer");
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener("keydown", onKey);
+        };
+        const onKey = (event) => {
+            if (event.key === "Escape") {
+                close();
+            }
+        };
+        const reset = el("button", "sl-dialog-text", "Reset");
+        reset.type = "button";
+        reset.addEventListener("click", () => {
+            sections = orderedSections({});
+            pinned = [];
+            hidden = [];
+            renderSections();
+            renderCollections();
+        });
+        const cancel = el("button", "sl-dialog-text", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", close);
+        const save = el("button", "sl-dialog-save", "Save");
+        save.type = "button";
+        save.addEventListener("click", async () => {
+            save.disabled = true;
+            try {
+                await ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl("Streamline/CollectionPrefs"),
+                    data: JSON.stringify({
+                        Sections: sections.map((section) => section.kind),
+                        HiddenSections: sections.filter((section) => section.hidden).map((section) => section.kind),
+                        Pinned: pinned,
+                        Hidden: hidden
+                    }),
+                    contentType: "application/json"
+                });
+                close();
+                invalidate("collection-prefs");
+                invalidate("collections");
+                rebuildCurrentPage();
+            } catch (error) {
+                console.warn("[Streamline] Saving the collections page failed.", error);
+                save.disabled = false;
+            }
+        });
+        footer.appendChild(reset);
+        footer.appendChild(el("span", "sl-dialog-spacer"));
+        footer.appendChild(cancel);
+        footer.appendChild(save);
+        panel.appendChild(footer);
+
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                close();
+            }
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.appendChild(overlay);
+        save.focus({ preventScroll: true });
     }
 
     function buildGenreTile(tile) {
@@ -3531,7 +3769,7 @@
                 && ((["universe", "collection"].includes(collection.Kind) && collection.ItemIds.some((id) => found.has(id)))
                     // By genre ("superhero": Marvel, DC) only when nothing matched by name, so
                     // "marvel" doesn't bring in DC.
-                    || (!byNameFound && inGenre.size && !collection.Partial && collection.Id !== "featured-short" && collection.ItemIds.filter((id) => inGenre.has(id)).length * 2 >= collection.ItemIds.length)));
+                    || (!byNameFound && inGenre.size && !collection.Partial && !isBroadCollection(collection) && collection.ItemIds.filter((id) => inGenre.has(id)).length * 2 >= collection.ItemIds.length)));
             const shownCollections = byName.concat(related).slice(0, 8);
             const members = (await Promise.all(byName.slice(0, 3).map(collectionMembers))).flat();
             if (token !== run) {
@@ -4012,7 +4250,7 @@
         if (!bottom || !page.isConnected || hashParams().get("id") !== id || page.querySelector(`.sl-more-like[data-item="${id}"]`)) {
             return;
         }
-        const order = { universe: 0, collection: 1, featured: 2, director: 3 };
+        const order = { universe: 0, collection: 1, featured: 2, director: 3, tv: 4, anime: 5 };
         const found = (collections || [])
             .filter((collection) => !isBroadCollection(collection))
             .sort((x, y) => order[x.Kind] - order[y.Kind])
@@ -4514,25 +4752,61 @@
         }
     }, { passive: true }));
 
+    // The back arrow sits just under the logo, and only on pages you went into (a title, a
+    // genre, a collection, search...), not on the main pages the header links to.
     function ensureBackButton() {
-        const headerLeft = document.querySelector(".skinHeader .headerLeft");
-        if (!headerLeft || headerLeft.querySelector(".sl-back")) {
+        // Not inside the header: it clips anything below its own edge.
+        if (!document.querySelector(".skinHeader")) {
             return;
         }
-        const back = el("button", "sl-back headerButton");
-        back.type = "button";
-        back.title = "Back";
-        back.setAttribute("aria-label", "Back");
-        back.appendChild(icon("arrow_back"));
-        back.addEventListener("click", () => {
-            rememberScroll();
-            if (window.history.length > 1) {
-                window.history.back();
-            } else {
-                navigate("/home");
-            }
-        });
-        headerLeft.insertBefore(back, headerLeft.firstChild);
+        if (!document.querySelector("body > .sl-back")) {
+            const back = el("button", "sl-back");
+            back.type = "button";
+            back.title = "Back";
+            back.setAttribute("aria-label", "Back");
+            back.appendChild(icon("arrow_back"));
+            back.appendChild(el("span", "sl-back-label", "Back"));
+            back.addEventListener("click", () => {
+                rememberScroll();
+                if (window.history.length > 1) {
+                    window.history.back();
+                } else {
+                    navigate("/home");
+                }
+            });
+            document.body.appendChild(back);
+        }
+        document.documentElement.classList.toggle("sl-main-page", isMainPage());
+        placeBackButton();
+    }
+
+    // Just under the header, lined up with the logo (desktop) or the page edge (phones, where
+    // there's no logo).
+    function placeBackButton() {
+        const header = document.querySelector(".skinHeader");
+        const logo = document.querySelector(".skinHeader .sl-logo");
+        const left = logo && isVisible(logo) ? logo.getBoundingClientRect().left : 0;
+        const root = document.documentElement.style;
+        root.setProperty("--sl-back-left", left > 0 ? `${Math.max(12, Math.round(left))}px` : "");
+        root.setProperty("--sl-back-top", header ? `${Math.round(header.getBoundingClientRect().bottom)}px` : "");
+    }
+    window.addEventListener("resize", placeBackButton, { passive: true });
+
+    // The pages the header links to: Home, the libraries, Watch List, Favorites, Collections.
+    function isMainPage() {
+        const hash = window.location.hash;
+        const params = hashParams();
+        if (!hash || hash === "#/" || hash.startsWith("#/home") || visibleHomeTab()) {
+            return true;
+        }
+        if (LIBRARY_TABS.some((library) => hash.startsWith(`${library.route}?`) || hash === library.route) && params.get("topParentId")) {
+            return true;
+        }
+        if (hash.startsWith("#/list")) {
+            const sl = params.get("sl");
+            return sl === "collections" || (["mylist", "favorites"].includes(sl) && !params.get("parentId"));
+        }
+        return false;
     }
 
     function syncNav() {

@@ -404,7 +404,7 @@ public sealed class StreamlineController : ControllerBase
             return Unauthorized();
         }
 
-        // Big ones (decades, Under 90 Minutes) come with their first titles only; the page asks
+        // Big ones (decades, All Anime, Netflix) come with their first titles only; the page asks
         // for the rest when it's opened, so this list stays small however big the library is.
         return Ok(_collections.Get(user).Select(collection => collection.ItemIds.Count <= MaxListedIds ? collection : new CollectionInfo
         {
@@ -484,6 +484,29 @@ public sealed class StreamlineController : ControllerBase
     {
         var user = CurrentUser();
         return user is null ? Unauthorized() : Ok(_genreTaste.SavePrefs(user.Id, prefs ?? new GenrePrefs()));
+    }
+
+    /// <summary>
+    /// Gets the signed-in user's own Collections page choices.
+    /// </summary>
+    [HttpGet("CollectionPrefs")]
+    [Authorize]
+    public ActionResult<CollectionPrefs> GetCollectionPrefs()
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_genreTaste.GetCollectionPrefs(user.Id));
+    }
+
+    /// <summary>
+    /// Saves the signed-in user's own Collections page choices.
+    /// </summary>
+    /// <param name="prefs">Section order, hidden sections, and pinned and hidden collections.</param>
+    [HttpPost("CollectionPrefs")]
+    [Authorize]
+    public ActionResult<CollectionPrefs> SaveCollectionPrefs([FromBody] CollectionPrefs prefs)
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_genreTaste.SaveCollectionPrefs(user.Id, prefs ?? new CollectionPrefs()));
     }
 
     /// <summary>
