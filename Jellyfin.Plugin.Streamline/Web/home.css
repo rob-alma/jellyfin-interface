@@ -3133,3 +3133,133 @@ html.sl-nav-on body > .sl-back:focus-visible {
     border-color: var(--sl-accent);
     outline: none;
 }
+
+/* ---- Clean up Continue Watching ----------------------------------------------------------- */
+
+/* A small button next to the row's title. */
+.sl-row-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    margin-left: 0.8em;
+    padding: 0.25em 0.75em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: none;
+    color: var(--sl-text-dim);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.sl-row-action:hover,
+.sl-row-action:focus-visible {
+    border-color: var(--sl-accent);
+    color: #fff;
+    outline: none;
+}
+
+.sl-row-action .material-icons {
+    font-size: 1rem;
+}
+
+.sl-cleanup-row {
+    flex-wrap: wrap;
+    gap: 0.7em;
+}
+
+.sl-cleanup-row.is-removed {
+    opacity: 0.55;
+}
+
+.sl-cleanup-thumb {
+    flex: none;
+    width: 72px;
+    height: 41px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sl-cleanup-row .sl-dialog-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.sl-cleanup-remove {
+    flex: none;
+}
+
+/* The reasons, under the title once Remove is pressed. */
+.sl-cleanup-reasons {
+    display: flex;
+    flex-direction: column;
+    flex-basis: 100%;
+    gap: 0.35em;
+    padding-bottom: 0.4em;
+}
+
+.sl-cleanup-reasons[hidden] {
+    display: none;
+}
+
+.sl-cleanup-ask {
+    color: var(--sl-text-dim);
+    font-size: 0.8rem;
+}
+
+.sl-cleanup-reason {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.5em 0.8em;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sl-cleanup-reason:hover,
+.sl-cleanup-reason:focus-visible {
+    border-color: var(--sl-accent);
+    outline: none;
+}
+
+.sl-cleanup-reason:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.sl-cleanup-reason-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.sl-cleanup-reason-sub {
+    color: var(--sl-text-dim);
+    font-size: 0.78rem;
+}
+
+/* Older engines (Jellyfin Desktop 1.12) have no flex gap. */
+@supports not (aspect-ratio: 1 / 1) {
+    .sl-row-action > * + * {
+        margin-left: 0.3em;
+    }
+
+    .sl-cleanup-row > * + * {
+        margin-left: 0.7em;
+    }
+
+    .sl-cleanup-row > .sl-cleanup-reasons {
+        margin-left: 0;
+    }
+
+    .sl-cleanup-reasons > * + * {
+        margin-top: 0.35em;
+    }
+}

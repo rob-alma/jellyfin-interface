@@ -1325,22 +1325,28 @@
         async continue() {
             const uid = userId();
             const common = { UserId: uid, Fields: ITEM_FIELDS, EnableImageTypes: IMAGE_TYPES, ImageTypeLimit: 1 };
-            const [resume, nextUp] = await Promise.all([
-                getJson("UserItems/Resume", Object.assign({ Limit: limit(), MediaTypes: "Video" }, common)).catch(() => null),
-                getJson("Shows/NextUp", Object.assign({ Limit: limit(), EnableResumable: false, EnableRewatching: false }, common)).catch(() => null)
+            const [resume, nextUp, hiddenIds] = await Promise.all([
+                getJson("UserItems/Resume", Object.assign({ Limit: limit() + 20, MediaTypes: "Video" }, common)).catch(() => null),
+                getJson("Shows/NextUp", Object.assign({ Limit: limit() + 20, EnableResumable: false, EnableRewatching: false }, common)).catch(() => null),
+                getJson("Streamline/ContinueWatching/Hidden").catch(() => [])
             ]);
 
             // One merged row, like on streaming services: half-watched things first, then the
-            // next episode of every show in progress that isn't already represented.
-            const items = (resume && resume.Items) || [];
+            // next episode of every show in progress that isn't already represented. Titles
+            // the person cleaned out stay out (until they play them again).
+            const hidden = new Set(normalizeIds(hiddenIds));
+            const shown = (item) => !hidden.has(normalizeIds([item.SeriesId || item.Id])[0]);
+            const items = ((resume && resume.Items) || []).filter(shown);
             const seriesSeen = new Set(items.map((item) => item.SeriesId).filter(Boolean));
-            for (const item of (nextUp && nextUp.Items) || []) {
+            for (const item of ((nextUp && nextUp.Items) || []).filter(shown)) {
                 if (!seriesSeen.has(item.SeriesId)) {
                     seriesSeen.add(item.SeriesId);
                     items.push(item);
                 }
             }
-            return [{ key: "continue", title: "Continue Watching", items: items.slice(0, limit()), layout: "landscape", action: "play" }];
+            const row = { key: "continue", title: "Continue Watching", items: items.slice(0, limit()), layout: "landscape", action: "play" };
+            row.headerAction = { icon: "cleaning_services", label: "Clean up", hint: "Clean up Continue Watching", go: () => openContinueCleanup(row.items) };
+            return [row];
         },
 
         async recommended(scope) {
@@ -2016,6 +2022,16 @@
             heading.appendChild(link);
         } else {
             heading.textContent = row.title;
+        }
+        if (row.headerAction) {
+            const action = el("button", "sl-row-action");
+            action.type = "button";
+            action.appendChild(icon(row.headerAction.icon));
+            action.appendChild(el("span", null, row.headerAction.label));
+            action.setAttribute("aria-label", row.headerAction.hint);
+            action.title = row.headerAction.hint;
+            action.addEventListener("click", row.headerAction.go);
+            heading.appendChild(action);
         }
         if (row.customizeBar) {
             // A thin bar above the genre rows: a clear divide, saying what they are and how to
@@ -2969,6 +2985,127 @@
         });
 
         start();
+    }
+
+    // Why someone takes a title out of Continue Watching. The server turns each into what both
+    // plugins read for taste: a Bad rating, lost interest, watched, the Watch List, or not theirs.
+    const CLEANUP_REASONS = [
+        { key: "didnt-like", label: "I didn't like it", sub: "Rated Bad: fewer titles like this in Recommended" },
+        { key: "lost-interest", label: "Lost interest", sub: "Not recommended again, a little less like it" },
+        { key: "finished", label: "I already finished it", sub: "Marked as watched" },
+        { key: "later", label: "Save for later", sub: "Moves to your Watch List" },
+        { key: "not-me", label: "Someone else watched it", sub: "Or started by accident; doesn't count for your taste" }
+    ];
+
+    // Clean up Continue Watching: what's in the row, each with a Remove button that asks why.
+    function openContinueCleanup(items) {
+        if (document.querySelector(".sl-dialog")) {
+            return;
+        }
+        let changed = false;
+        const reasonsUsed = new Set();
+        const overlay = el("div", "sl-dialog");
+        const panel = el("div", "sl-dialog-panel");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute("aria-modal", "true");
+        panel.setAttribute("aria-label", "Clean up Continue Watching");
+        overlay.appendChild(panel);
+        panel.appendChild(el("h2", "sl-dialog-title", "Clean up Continue Watching"));
+        panel.appendChild(el("p", "sl-dialog-sub", "Remove what you're not going to finish. Tell us why and your recommendations take it into account. It comes back if you play it again."));
+        const list = el("div", "sl-dialog-list");
+        panel.appendChild(list);
+
+        const renderEmpty = () => {
+            if (!list.querySelector(".sl-dialog-row:not(.is-removed)")) {
+                list.appendChild(el("p", "sl-dialog-sub", "Nothing left to watch here."));
+            }
+        };
+        items.forEach((item) => {
+            const line = el("div", "sl-dialog-row sl-cleanup-row");
+            const thumb = landscapeUrl(item, 160);
+            if (thumb) {
+                line.appendChild(lazyImage(thumb, "sl-cleanup-thumb"));
+            }
+            const name = el("span", "sl-dialog-name", item.SeriesName || item.Name);
+            if (item.Type === "Episode") {
+                const number = item.ParentIndexNumber !== undefined && item.IndexNumber !== undefined ? `S${item.ParentIndexNumber}:E${item.IndexNumber} ` : "";
+                name.appendChild(el("span", "sl-dialog-kind", `${number}${item.Name || ""}`));
+            }
+            line.appendChild(name);
+            const remove = el("button", "sl-dialog-text sl-cleanup-remove", "Remove");
+            remove.type = "button";
+            remove.setAttribute("aria-label", `Remove ${item.SeriesName || item.Name}`);
+            line.appendChild(remove);
+            const reasons = el("div", "sl-cleanup-reasons");
+            reasons.hidden = true;
+            reasons.appendChild(el("span", "sl-cleanup-ask", "Why?"));
+            CLEANUP_REASONS.forEach((reason) => {
+                const option = el("button", "sl-cleanup-reason");
+                option.type = "button";
+                option.appendChild(el("span", "sl-cleanup-reason-label", reason.label));
+                option.appendChild(el("span", "sl-cleanup-reason-sub", reason.sub));
+                option.addEventListener("click", async () => {
+                    reasons.querySelectorAll("button").forEach((button) => {
+                        button.disabled = true;
+                    });
+                    try {
+                        await ApiClient.ajax({ type: "POST", url: url(`Streamline/ContinueWatching/${item.Id}/Remove`, { reason: reason.key }) });
+                        changed = true;
+                        reasonsUsed.add(reason.key);
+                        line.classList.add("is-removed");
+                        line.replaceChildren(el("span", "sl-dialog-name", `${item.SeriesName || item.Name}: removed (${reason.label.toLowerCase()})`));
+                        renderEmpty();
+                    } catch (error) {
+                        console.warn("[Streamline] Removing from Continue Watching failed.", error);
+                        reasons.querySelectorAll("button").forEach((button) => {
+                            button.disabled = false;
+                        });
+                    }
+                });
+                reasons.appendChild(option);
+            });
+            line.appendChild(reasons);
+            remove.addEventListener("click", () => {
+                reasons.hidden = !reasons.hidden;
+                remove.textContent = reasons.hidden ? "Remove" : "Cancel";
+            });
+            list.appendChild(line);
+        });
+        renderEmpty();
+
+        const footer = el("div", "sl-dialog-footer");
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener("keydown", onKey);
+            if (changed) {
+                invalidate("continue");
+                invalidate("taste");
+                if (reasonsUsed.has("later")) {
+                    invalidate("watchlist");
+                    invalidate("mylist");
+                }
+                rebuildCurrentPage();
+            }
+        };
+        const onKey = (event) => {
+            if (event.key === "Escape") {
+                close();
+            }
+        };
+        footer.appendChild(el("span", "sl-dialog-spacer"));
+        const done = el("button", "sl-dialog-save", "Done");
+        done.type = "button";
+        done.addEventListener("click", close);
+        footer.appendChild(done);
+        panel.appendChild(footer);
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                close();
+            }
+        });
+        document.addEventListener("keydown", onKey);
+        document.body.appendChild(overlay);
+        done.focus({ preventScroll: true });
     }
 
     // Customize: each person's own genre rows. Pin a genre (always at the top, in the pinned

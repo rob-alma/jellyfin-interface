@@ -23,6 +23,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IdentityService>();
         serviceCollection.AddSingleton<ComingSoonService>();
         serviceCollection.AddSingleton<CollectionService>();
+        serviceCollection.AddSingleton<ContinueWatchingService>();
         serviceCollection.AddSingleton<GenreTasteService>();
         serviceCollection.AddSingleton<IScheduledTask, CollectionsTask>();
         serviceCollection.AddSingleton<SeerrService>();

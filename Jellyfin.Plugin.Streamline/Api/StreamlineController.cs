@@ -37,6 +37,7 @@ public sealed class StreamlineController : ControllerBase
     private readonly SeasonTrailerService _seasonTrailers;
     private readonly CollectionService _collections;
     private readonly GenreTasteService _genreTaste;
+    private readonly ContinueWatchingService _continueWatching;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamlineController"/> class.
@@ -54,6 +55,7 @@ public sealed class StreamlineController : ControllerBase
     /// <param name="genreTaste">Genre-row order and choices.</param>
     /// <param name="trailerOverrides">Admins' trailer choices.</param>
     /// <param name="seasonTrailers">Trailers per season.</param>
+    /// <param name="continueWatching">Titles taken out of Continue Watching.</param>
     public StreamlineController(
         IUserManager userManager,
         ILibraryManager libraryManager,
@@ -67,8 +69,10 @@ public sealed class StreamlineController : ControllerBase
         CollectionService collections,
         GenreTasteService genreTaste,
         TrailerOverrides trailerOverrides,
-        SeasonTrailerService seasonTrailers)
+        SeasonTrailerService seasonTrailers,
+        ContinueWatchingService continueWatching)
     {
+        _continueWatching = continueWatching;
         _trailerOverrides = trailerOverrides;
         _seasonTrailers = seasonTrailers;
         _genreTaste = genreTaste;
@@ -484,6 +488,36 @@ public sealed class StreamlineController : ControllerBase
     {
         var user = CurrentUser();
         return user is null ? Unauthorized() : Ok(_genreTaste.SavePrefs(user.Id, prefs ?? new GenrePrefs()));
+    }
+
+    /// <summary>
+    /// Gets the movies and shows the signed-in user took out of Continue Watching.
+    /// </summary>
+    [HttpGet("ContinueWatching/Hidden")]
+    [Authorize]
+    public ActionResult<IReadOnlyList<Guid>> GetContinueWatchingHidden()
+    {
+        var user = CurrentUser();
+        return user is null ? Unauthorized() : Ok(_continueWatching.Hidden(user.Id));
+    }
+
+    /// <summary>
+    /// Takes a title out of the signed-in user's Continue Watching, saying why (which counts for
+    /// their recommendations and genre rows).
+    /// </summary>
+    /// <param name="itemId">The movie, show or episode.</param>
+    /// <param name="reason">didnt-like, lost-interest, finished, later or not-me.</param>
+    [HttpPost("ContinueWatching/{itemId}/Remove")]
+    [Authorize]
+    public ActionResult RemoveFromContinueWatching([FromRoute] Guid itemId, [FromQuery] string reason)
+    {
+        var user = CurrentUser();
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        return _continueWatching.Remove(user, itemId, reason ?? string.Empty) ? NoContent() : BadRequest();
     }
 
     /// <summary>

@@ -31,11 +31,15 @@ public sealed class GenreTasteService
     // A rating replaces the watch weight: Terrible and Bad push a genre down, the rest up.
     private static readonly double[] RatingWeights = [-3.0, -1.5, 0.5, 2.0, 3.5];
 
+    // Lost interest (Continue Watching clean-up), without a rating: a little against the genre.
+    private const double LostInterestWeight = -1.0;
+
     private static readonly JsonSerializerOptions FileJson = new() { WriteIndented = false };
 
     private readonly ILibraryManager _libraryManager;
     private readonly IUserDataManager _userDataManager;
     private readonly IUserManager _userManager;
+    private readonly ContinueWatchingService _continueWatching;
     private readonly ILogger<GenreTasteService> _logger;
     private readonly ConcurrentDictionary<Guid, Dictionary<Guid, double>> _taste = new();
     private readonly object _fileLock = new();
@@ -46,9 +50,11 @@ public sealed class GenreTasteService
     /// <param name="libraryManager">Jellyfin's library manager.</param>
     /// <param name="userDataManager">Jellyfin's user data manager.</param>
     /// <param name="userManager">Jellyfin's user manager.</param>
+    /// <param name="continueWatching">Titles taken out of Continue Watching, and why.</param>
     /// <param name="logger">Logger.</param>
-    public GenreTasteService(ILibraryManager libraryManager, IUserDataManager userDataManager, IUserManager userManager, ILogger<GenreTasteService> logger)
+    public GenreTasteService(ILibraryManager libraryManager, IUserDataManager userDataManager, IUserManager userManager, ContinueWatchingService continueWatching, ILogger<GenreTasteService> logger)
     {
+        _continueWatching = continueWatching;
         _libraryManager = libraryManager;
         _userDataManager = userDataManager;
         _userManager = userManager;
@@ -187,15 +193,26 @@ public sealed class GenreTasteService
         return clean;
     }
 
-    // A title's weight for a user: a rating if they gave one, else how much they watched it,
-    // plus a bit for a favorite.
+    // A title's weight for a user: a rating if they gave one, else lost interest, else how much
+    // they watched it, plus a bit for a favorite. Nothing for what someone else watched on their
+    // account (they said so when cleaning up Continue Watching).
     private double Weight(User user, BaseItem title)
     {
+        if (_continueWatching.IsIgnored(user.Id, title.Id))
+        {
+            return 0;
+        }
+
         var data = _userDataManager.GetUserData(user, title);
         var favorite = data is { IsFavorite: true } ? 1.5 : 0;
         if (data?.Rating is double rating && rating > 0)
         {
             return RatingWeights[Math.Clamp((int)Math.Round(rating / 2) - 1, 0, 4)] + favorite;
+        }
+
+        if (_continueWatching.LostInterest(user.Id, title.Id))
+        {
+            return LostInterestWeight + favorite;
         }
 
         double watched;
@@ -225,7 +242,7 @@ public sealed class GenreTasteService
         var taste = new Dictionary<Guid, double>();
         try
         {
-            // Movies they watched, rated or favorited; shows with watched episodes, rated or favorited.
+            // Movies they watched, rated, favorited or gave up on; shows with watched episodes, rated, favorited or given up on.
             var titles = new Dictionary<Guid, BaseItem>();
             foreach (var movie in _libraryManager.GetItemList(new InternalItemsQuery(user) { IncludeItemTypes = [BaseItemKind.Movie], Recursive = true, IsPlayed = true, DtoOptions = new DtoOptions(false) }))
             {
@@ -243,7 +260,7 @@ public sealed class GenreTasteService
             foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery(user) { IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series], Recursive = true, DtoOptions = new DtoOptions(false) }))
             {
                 var data = _userDataManager.GetUserData(user, item);
-                if (data is { IsFavorite: true } || data?.Rating > 0)
+                if (data is { IsFavorite: true } || data?.Rating > 0 || _continueWatching.LostInterest(user.Id, item.Id))
                 {
                     titles[item.Id] = item;
                 }
@@ -273,9 +290,21 @@ public sealed class GenreTasteService
     {
         try
         {
-            if (!_taste.TryGetValue(e.UserId, out var taste) || _userManager.GetUserById(e.UserId) is not { } user)
+            if (_userManager.GetUserById(e.UserId) is not { } user)
             {
                 return;
+            }
+
+            // Not looked at since the server started: update the saved taste. None saved yet:
+            // it's worked out in full on their first visit anyway.
+            if (!_taste.TryGetValue(e.UserId, out var taste))
+            {
+                if (LoadTaste(e.UserId) is not { } saved)
+                {
+                    return;
+                }
+
+                taste = _taste.GetOrAdd(e.UserId, saved);
             }
 
             BaseItem? title = e.Item switch
@@ -300,6 +329,16 @@ public sealed class GenreTasteService
                 else
                 {
                     taste[title.Id] = weight;
+                }
+            }
+
+            // Kept on disk too, so a restart doesn't lose it until the nightly rebuild (not on
+            // every progress report while something plays).
+            if (e.SaveReason != UserDataSaveReason.PlaybackProgress)
+            {
+                lock (taste)
+                {
+                    SaveTaste(user.Id, taste);
                 }
             }
         }
