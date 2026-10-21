@@ -1127,6 +1127,16 @@ html.sl-route .skinHeader .headerTabs {
     gap: 0.5rem;
 }
 
+/* All / Movies / Shows on a collection with both: its own line, above the sort chips. */
+.sl-kind-chips {
+    flex-basis: 100%;
+    margin-top: 0.3rem;
+}
+
+.sl-kind-chips[hidden] {
+    display: none;
+}
+
 .sl-sort-direction {
     display: inline-flex;
     align-items: center;

@@ -2850,9 +2850,46 @@
                     if (!/title/.test(subtitle.textContent)) {
                         subtitle.textContent = source.subtitle;
                     }
+                    if (collection.Movies && collection.Shows) {
+                        buildKindChips(collection);
+                    }
                 }
             });
         }
+
+        // A collection with both: All, Movies or Shows.
+        let kind = "all";
+        const kindChips = el("div", "sl-sort-chips sl-kind-chips");
+        kindChips.setAttribute("role", "radiogroup");
+        kindChips.setAttribute("aria-label", "Show");
+        kindChips.hidden = true;
+        const buildKindChips = (collection) => {
+            const options = [
+                { key: "all", label: "All", count: collection.Movies + collection.Shows },
+                { key: "Movie", label: "Movies", count: collection.Movies },
+                { key: "Series", label: "Shows", count: collection.Shows }
+            ];
+            kindChips.replaceChildren(...options.map((option) => {
+                const chip = el("button", "sl-sort-chip", `${option.label} (${option.count})`);
+                chip.type = "button";
+                chip.dataset.kind = option.key;
+                chip.setAttribute("role", "radio");
+                chip.addEventListener("click", () => {
+                    if (option.key !== kind) {
+                        kind = option.key;
+                        start();
+                    }
+                });
+                return chip;
+            }));
+            kindChips.hidden = false;
+            syncKindChips();
+        };
+        const syncKindChips = () => kindChips.querySelectorAll(".sl-sort-chip").forEach((chip) => {
+            const on = chip.dataset.kind === kind;
+            chip.classList.toggle("is-on", on);
+            chip.setAttribute("aria-checked", String(on));
+        });
 
         const controls = el("div", "sl-sort");
         const chips = el("div", "sl-sort-chips");
@@ -2862,6 +2899,7 @@
         direction.type = "button";
         controls.appendChild(chips);
         controls.appendChild(direction);
+        head.appendChild(kindChips);
         head.appendChild(controls);
 
         const grid = el("div", "sl-grid");
@@ -2894,6 +2932,7 @@
                 observer.disconnect();
             }
 
+            syncKindChips();
             chips.querySelectorAll(".sl-sort-chip").forEach((chip) => {
                 const on = chip.dataset.sort === current.key;
                 chip.classList.toggle("is-on", on);
@@ -2917,7 +2956,7 @@
                     let batch;
                     if (source.all) {
                         whole = whole || await source.all();
-                        sorted = sorted || sortLocal(whole, current, desc);
+                        sorted = sorted || sortLocal(kind === "all" ? whole : whole.filter((item) => item.Type === kind), current, desc);
                         total = sorted.length;
                         batch = sorted.slice(offset, offset + BROWSE_BATCH);
                     } else {
