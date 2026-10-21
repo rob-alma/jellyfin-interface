@@ -20,7 +20,8 @@ namespace Jellyfin.Plugin.Streamline.Services;
 
 /// <summary>
 /// What's about to air, for the "Coming Soon" row: the next episode of every show on the server
-/// that airs within the month. The same for everyone (only cut down to the libraries each
+/// that airs within the month, when it's new: a new show, or a new season (the season started
+/// recently, not a long-running one that keeps going). The same for everyone (only cut down to the libraries each
 /// person can see); requests aren't part of it. Air dates come from Seerr (which gets them from
 /// TMDb): Jellyfin only knows episodes once they're downloaded. Worked out in the background
 /// every few hours, so the row never waits for Seerr.
@@ -28,6 +29,7 @@ namespace Jellyfin.Plugin.Streamline.Services;
 public sealed class ComingSoonService
 {
     private const int DaysAhead = 30;
+    private const int RecentSeasonDays = 90;
     private const int MaxParallel = 4;
     private static readonly TimeSpan RebuildEvery = TimeSpan.FromHours(3);
     private static readonly TimeSpan DetailsLifetime = TimeSpan.FromHours(12);
@@ -137,7 +139,8 @@ public sealed class ComingSoonService
         return ids;
     }
 
-    // Every show on the server: its next episode, if that airs within the month.
+    // Every show on the server: its next episode, if that airs within the month and its season
+    // is new.
     private async Task<List<ComingSoonItem>> NewEpisodesAsync(CancellationToken cancellationToken)
     {
         var shows = _libraryManager.GetItemList(new InternalItemsQuery
@@ -168,6 +171,12 @@ public sealed class ComingSoonService
                 return;
             }
 
+            // A new show or a new season: the season started (or starts) recently.
+            if ((SeasonStart(tv, season) ?? airDate) < today.AddDays(-RecentSeasonDays))
+            {
+                return;
+            }
+
             var premiere = season == 1 && number == 1;
             result.Add(new ComingSoonItem
             {
@@ -183,6 +192,19 @@ public sealed class ComingSoonService
         }).ConfigureAwait(false);
 
         return result.ToList();
+    }
+
+    private static DateTime? SeasonStart(JsonElement tv, int seasonNumber)
+    {
+        if (!tv.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        return seasons.EnumerateArray()
+            .Where(season => season.TryGetProperty("seasonNumber", out var number) && number.ValueKind == JsonValueKind.Number && number.GetInt32() == seasonNumber)
+            .Select(season => Date(season, "airDate"))
+            .FirstOrDefault();
     }
 
     private static DateTime? Date(JsonElement element, string property)

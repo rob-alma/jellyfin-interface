@@ -75,6 +75,9 @@ public sealed class CollectionService
 
     private static readonly HashSet<string> MedicalTags = new(StringComparer.OrdinalIgnoreCase) { "hospital", "doctor", "nurse", "surgeon", "paramedic", "medical", "physician" };
 
+    // Medical titles their keywords don't show (one hospital keyword only).
+    private static readonly HashSet<string> MedicalTitles = new(StringComparer.Ordinal) { "this is going to hurt", "ratched" };
+
     // Decades, after the classics. Movies by release year, shows by the year they started.
     private static readonly Universe[] Decades =
     [
@@ -106,7 +109,8 @@ public sealed class CollectionService
         // Scream, Doctor Strange and Totoro.
         new("medical", "Medical", ["medical", "hospital", "doctor", "ziekenhuis", "dokter", "artsen"],
             Test: item => HasTag(item, "medical drama", "medical resident", "medical student", "emergency room")
-                || item.Tags.Count(tag => MedicalTags.Contains(tag)) >= 2),
+                || item.Tags.Count(tag => MedicalTags.Contains(tag)) >= 2
+                || MedicalTitles.Contains(Normalize(item.Name))),
         new("musicals", "Musicals", ["musical", "musicals", "sing along"], Tags: ["musical", "musical film", "broadway", "jukebox musical", "song and dance"]),
         new("best-picture", "Best Picture Winners", ["oscar", "oscars", "academy award", "best picture"], TitleYears: BestPictureWinners, MoviesOnly: true),
         new("award-shows", "Award-winning Shows", ["emmy", "emmys", "award", "awards", "award winning"], Titles: EmmyWinningShows, SeriesOnly: true, ShowsOnly: true),

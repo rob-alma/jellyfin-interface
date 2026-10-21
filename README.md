@@ -133,7 +133,8 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
 - **Search** also matches genres and sub-genres by name or keyword ("musical", "superhero",
   "anime"), showing their tile and titles; "war movies" / "history shows" narrow to one type.
 - **Coming Soon**: episodes about to air, the same for everyone: the next episode of every show on the
-  server airing within the month (requests aren't listed). Shows only, so not on the Movies page. A
+  server airing within the month, only for a new show or a new season (its season started in the last
+  90 days); requests aren't listed. Shows only, so not on the Movies page. A
   card opens the show's page; a brand-new show (S1:E1) doesn't open. + and the heart are the show's.
   Air dates come from Seerr (TMDb), worked out in the background every 3 hours; without Seerr the row
   is skipped.

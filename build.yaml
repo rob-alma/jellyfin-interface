@@ -1,7 +1,7 @@
 ---
 name: "Streamline"
 guid: "d0c3935f-a1ab-430c-95ed-388ce83b1431"
-version: "0.21.1.0"
+version: "0.21.2.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "A streamlined, cinematic home screen"
@@ -17,6 +17,7 @@ artifacts:
 - "Jellyfin.Plugin.Streamline.dll"
 - "Newtonsoft.Json.dll"
 changelog: >
+  0.21.2: Coming Soon only has new shows and new seasons again (a season that started in the last 90 days), not every running show. This Is Going To Hurt and Ratched are in Medical.
   0.21.1: Coming Soon only has episodes about to air: no requested titles (On its way), so no movies or shows that aren't on the server yet.
   0.21.0: Coming Soon is the same for everyone (not based on what you watch, your Watch List or Favorites): the next episode of every show on the server that airs within a month, plus requested movies (by their digital release) and new shows on their way, on Home, Movies and Shows. A card opens the show's own page, never an episode that isn't there yet; a brand-new show (season 1, episode 1) and titles not on the server can't be opened. Every card has + (Watch List) and a heart (Favorites); for titles not on the server yet the choice is kept and carried out when they arrive. Worked out in the background every 3 hours.
   0.20.1: Collections with both movies and shows have All / Movies / Shows buttons (with counts) on their page.
