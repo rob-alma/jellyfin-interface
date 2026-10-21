@@ -132,13 +132,11 @@ pages) with a streamlined, cinematic layout, in the style of the big streaming s
   (Movies and Shows are in the top bar). The person icon opens Settings and Sign out for everyone.
 - **Search** also matches genres and sub-genres by name or keyword ("musical", "superhero",
   "anime"), showing their tile and titles; "war movies" / "history shows" narrow to one type.
-- **Coming Soon**: the same for everyone: the next episode of every show on the server airing within
-  the month, plus approved Seerr requests on their way (movies by their digital release, new shows by
-  their premiere; never who asked). Movies on the Movies page, shows on Shows, both on Home. A card
-  opens the show's page; a brand-new show (S1:E1) and titles not on the server don't open. + and the
-  heart work on every card; for titles not on the server yet the choice is kept and carried out when
-  they arrive. Air dates come from Seerr (TMDb), worked out in the background every 3 hours; without
-  Seerr the row is skipped.
+- **Coming Soon**: episodes about to air, the same for everyone: the next episode of every show on the
+  server airing within the month (requests aren't listed). Shows only, so not on the Movies page. A
+  card opens the show's page; a brand-new show (S1:E1) doesn't open. + and the heart are the show's.
+  Air dates come from Seerr (TMDb), worked out in the background every 3 hours; without Seerr the row
+  is skipped.
 - **Search**: a big search field, genre shortcuts, results as posters (and matching people), and
   what's popular here before you type.
 - **Phones**: a tab bar at the bottom (Home, Movies, Shows, Watch List, Favorites).
@@ -186,7 +184,6 @@ The plugin adds a few endpoints under `/Streamline`:
 | `GET /Streamline/Trailers/{itemId}` | signed in | checked, ranked trailers for an item (its show's for seasons/episodes) |
 | `GET /Streamline/Admin/Issues`, `POST /Streamline/Admin/Issues/{itemId}/Done`, `POST /Streamline/Admin/SeerrTest` | admin | titles needing a manual fix, mark one handled; test and sync Seerr |
 | `GET /Streamline/ComingSoon` | signed in | the Coming Soon row (the same for everyone, cut to what the caller can see) |
-| `GET /Streamline/Pending`, `POST /Streamline/Pending/{tv:id or movie:id}/{watchlist or favorite}?on=` | signed in | the caller's Watch List/Favorites choices for titles not on the server yet |
 | `GET /Streamline/Collections` | signed in | the caller's collections, titles in release order |
 | `GET /Streamline/script`, `GET /Streamline/style` | none (loaded before sign-in) | the client script and stylesheet |
 | `GET /Streamline/Config` | signed in | the settings the client needs (nothing sensitive) |

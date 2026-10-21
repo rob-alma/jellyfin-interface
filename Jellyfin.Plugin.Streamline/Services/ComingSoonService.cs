@@ -19,18 +19,15 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Streamline.Services;
 
 /// <summary>
-/// What's coming to the server in the next month, for the "Coming Soon" row. The same for
-/// everyone (only cut down to the libraries each person can see): the next episode of every
-/// show on the server that airs within the month, and requested movies and new shows that are
-/// on their way (never who asked). Air and release dates come from Seerr (which gets them
-/// from TMDb): Jellyfin only knows episodes once they're downloaded. Worked out in the
-/// background every few hours, so the row never waits for Seerr.
+/// What's about to air, for the "Coming Soon" row: the next episode of every show on the server
+/// that airs within the month. The same for everyone (only cut down to the libraries each
+/// person can see); requests aren't part of it. Air dates come from Seerr (which gets them from
+/// TMDb): Jellyfin only knows episodes once they're downloaded. Worked out in the background
+/// every few hours, so the row never waits for Seerr.
 /// </summary>
 public sealed class ComingSoonService
 {
     private const int DaysAhead = 30;
-    private const int MovieDaysAhead = 60;
-    private const int OnItsWayDays = 120;
     private const int MaxParallel = 4;
     private static readonly TimeSpan RebuildEvery = TimeSpan.FromHours(3);
     private static readonly TimeSpan DetailsLifetime = TimeSpan.FromHours(12);
@@ -39,7 +36,6 @@ public sealed class ComingSoonService
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILibraryManager _libraryManager;
-    private readonly PendingChoicesService _pending;
     private readonly ILogger<ComingSoonService> _logger;
     private readonly ConcurrentDictionary<string, (DateTime At, JsonElement? Details)> _details = new();
     private readonly ConcurrentDictionary<Guid, (DateTime At, HashSet<Guid> Ids)> _visible = new();
@@ -51,11 +47,9 @@ public sealed class ComingSoonService
     /// </summary>
     /// <param name="httpClientFactory">HTTP client factory.</param>
     /// <param name="libraryManager">Jellyfin's library manager.</param>
-    /// <param name="pending">Watch List and Favorites choices for titles not on the server yet.</param>
     /// <param name="logger">Logger.</param>
-    public ComingSoonService(IHttpClientFactory httpClientFactory, ILibraryManager libraryManager, PendingChoicesService pending, ILogger<ComingSoonService> logger)
+    public ComingSoonService(IHttpClientFactory httpClientFactory, ILibraryManager libraryManager, ILogger<ComingSoonService> logger)
     {
-        _pending = pending;
         _httpClientFactory = httpClientFactory;
         _libraryManager = libraryManager;
         _logger = logger;
@@ -88,7 +82,7 @@ public sealed class ComingSoonService
         }
 
         var visible = VisibleIds(user);
-        return items.Where(item => item.ItemId is null || visible.Contains(Guid.Parse(item.ItemId))).ToList();
+        return items.Where(item => item.ItemId is not null && visible.Contains(Guid.Parse(item.ItemId))).ToList();
     }
 
     /// <summary>
@@ -106,17 +100,12 @@ public sealed class ComingSoonService
 
         try
         {
-            // Titles that arrived since: carry out what people chose for them here.
-            _pending.ApplyArrived();
             var started = DateTime.UtcNow;
-            var items = new List<ComingSoonItem>();
-            items.AddRange(await NewEpisodesAsync(cancellationToken).ConfigureAwait(false));
-            var seen = items.Select(item => item.TmdbId).ToHashSet();
-            items.AddRange((await RequestedAsync(cancellationToken).ConfigureAwait(false)).Where(item => !seen.Contains(item.TmdbId)));
+            var items = await NewEpisodesAsync(cancellationToken).ConfigureAwait(false);
 
-            // On its way (out already, downloading) first, then by date.
+            // Soonest first.
             _list = (DateTime.UtcNow, items
-                .OrderBy(item => item.Date is null ? DateTime.MinValue : DateTime.Parse(item.Date, CultureInfo.InvariantCulture))
+                .OrderBy(item => DateTime.Parse(item.Date!, CultureInfo.InvariantCulture))
                 .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
                 .ToList());
             _logger.LogInformation("Coming Soon: {Count} titles in {Seconds:0}s.", items.Count, (DateTime.UtcNow - started).TotalSeconds);
@@ -183,8 +172,7 @@ public sealed class ComingSoonService
             result.Add(new ComingSoonItem
             {
                 Kind = premiere ? "show" : number == 1 ? "season" : "episode",
-                MediaType = "tv",
-                Title = entry.Series.Name,
+                        Title = entry.Series.Name,
                 Subtitle = $"S{season}:E{number}" + (next.TryGetProperty("name", out var name) && !string.IsNullOrWhiteSpace(name.GetString()) ? " " + name.GetString() : string.Empty),
                 Date = airDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 ItemId = entry.Series.Id.ToString("N"),
@@ -195,90 +183,6 @@ public sealed class ComingSoonService
         }).ConfigureAwait(false);
 
         return result.ToList();
-    }
-
-    // Approved requests on their way: movies about to come out (or out and downloading), and
-    // new shows not on the server yet. Never who asked: everyone sees this.
-    private async Task<List<ComingSoonItem>> RequestedAsync(CancellationToken cancellationToken)
-    {
-        var result = new List<ComingSoonItem>();
-        using var json = await GetJsonAsync("api/v1/request?take=200&skip=0&filter=approved&sort=added", cancellationToken).ConfigureAwait(false);
-        if (json is null || !json.RootElement.TryGetProperty("results", out var requests))
-        {
-            return result;
-        }
-
-        var today = DateTime.UtcNow.Date;
-        foreach (var request in requests.EnumerateArray())
-        {
-            if (!request.TryGetProperty("media", out var media))
-            {
-                continue;
-            }
-
-            // Seerr's media status: 2 pending, 3 processing (downloading or waiting for release).
-            var mediaStatus = media.TryGetProperty("status", out var mediaStatusValue) && mediaStatusValue.ValueKind == JsonValueKind.Number ? mediaStatusValue.GetInt32() : 0;
-            var tmdb = media.TryGetProperty("tmdbId", out var tmdbValue) && tmdbValue.ValueKind == JsonValueKind.Number ? tmdbValue.GetInt32().ToString(CultureInfo.InvariantCulture) : null;
-            var type = media.TryGetProperty("mediaType", out var typeValue) ? typeValue.GetString() : null;
-            if (mediaStatus is not (2 or 3) || tmdb is null || type is not ("movie" or "tv"))
-            {
-                continue;
-            }
-
-            if (InLibrary(type, tmdb) is not null || await DetailsAsync(type, tmdb, cancellationToken).ConfigureAwait(false) is not { } details)
-            {
-                continue;
-            }
-
-            // A movie: its digital (or disc) release, else its cinema date. A show: its premiere.
-            var released = type == "movie" ? HomeRelease(details) ?? Date(details, "releaseDate") : Date(details, "firstAirDate");
-            var requested = request.TryGetProperty("createdAt", out var createdValue) && DateTime.TryParse(createdValue.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var created) ? created : today;
-            if (released is null
-                || released > today.AddDays(type == "movie" ? MovieDaysAhead : DaysAhead)
-                || (released <= today && requested < today.AddDays(-OnItsWayDays)))
-            {
-                continue;
-            }
-
-            result.Add(new ComingSoonItem
-            {
-                Kind = type == "tv" ? "show" : "movie",
-                MediaType = type,
-                Title = (type == "movie" ? Text(details, "title") : Text(details, "name")) ?? string.Empty,
-                Subtitle = type == "tv" ? "New show" : released > today ? "New movie" : "On its way",
-                // Out already: it's downloading, so no date to count down to.
-                Date = released > today ? released.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
-                TmdbId = type + ":" + tmdb,
-                Backdrop = Text(details, "backdropPath"),
-                Poster = Text(details, "posterPath")
-            });
-        }
-
-        return result;
-    }
-
-    private BaseItem? InLibrary(string type, string tmdb) => _libraryManager.GetItemList(new InternalItemsQuery
-    {
-        IncludeItemTypes = [type == "tv" ? BaseItemKind.Series : BaseItemKind.Movie],
-        Recursive = true,
-        HasAnyProviderId = new Dictionary<string, string> { [MetadataProvider.Tmdb.ToString()] = tmdb }
-    }).FirstOrDefault();
-
-    // The first digital (4) or physical (5) release anywhere: when a movie can come to the server.
-    private static DateTime? HomeRelease(JsonElement movie)
-    {
-        if (!movie.TryGetProperty("releases", out var releases) || !releases.TryGetProperty("results", out var countries) || countries.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        return countries.EnumerateArray()
-            .Where(country => country.TryGetProperty("release_dates", out var dates) && dates.ValueKind == JsonValueKind.Array)
-            .SelectMany(country => country.GetProperty("release_dates").EnumerateArray())
-            .Where(release => release.TryGetProperty("type", out var kind) && kind.ValueKind == JsonValueKind.Number && kind.GetInt32() is 4 or 5)
-            .Select(release => Date(release, "release_date"))
-            .Where(date => date is not null)
-            .Min();
     }
 
     private static DateTime? Date(JsonElement element, string property)
@@ -337,11 +241,8 @@ public sealed class ComingSoonService
 /// </summary>
 public sealed class ComingSoonItem
 {
-    /// <summary>Gets or sets what it is: episode, season (premiere), show (a new show) or movie.</summary>
+    /// <summary>Gets or sets what it is: episode, season (premiere) or show (a new show's first episode).</summary>
     public string Kind { get; set; } = string.Empty;
-
-    /// <summary>Gets or sets "tv" or "movie".</summary>
-    public string MediaType { get; set; } = "tv";
 
     /// <summary>Gets or sets a value indicating whether the card opens the title's page (a show on the server, but not a brand-new one).</summary>
     public bool Opens { get; set; }
@@ -352,18 +253,12 @@ public sealed class ComingSoonItem
     /// <summary>Gets or sets the line under it (the episode).</summary>
     public string Subtitle { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the date it airs/comes out (yyyy-MM-dd), or null when it's on its way now.</summary>
+    /// <summary>Gets or sets the date it airs (yyyy-MM-dd).</summary>
     public string? Date { get; set; }
 
-    /// <summary>Gets or sets the Jellyfin item id, when it's (partly) in the library.</summary>
+    /// <summary>Gets or sets the show's Jellyfin item id.</summary>
     public string? ItemId { get; set; }
 
-    /// <summary>Gets or sets "movie:id"/"tv:id" for TMDb.</summary>
+    /// <summary>Gets or sets "tv:id" for TMDb.</summary>
     public string? TmdbId { get; set; }
-
-    /// <summary>Gets or sets the TMDb backdrop path, for titles not in the library.</summary>
-    public string? Backdrop { get; set; }
-
-    /// <summary>Gets or sets the TMDb poster path, for titles not in the library.</summary>
-    public string? Poster { get; set; }
 }

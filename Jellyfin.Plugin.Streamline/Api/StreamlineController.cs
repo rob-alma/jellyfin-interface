@@ -38,7 +38,6 @@ public sealed class StreamlineController : ControllerBase
     private readonly CollectionService _collections;
     private readonly GenreTasteService _genreTaste;
     private readonly ContinueWatchingService _continueWatching;
-    private readonly PendingChoicesService _pending;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamlineController"/> class.
@@ -57,7 +56,6 @@ public sealed class StreamlineController : ControllerBase
     /// <param name="trailerOverrides">Admins' trailer choices.</param>
     /// <param name="seasonTrailers">Trailers per season.</param>
     /// <param name="continueWatching">Titles taken out of Continue Watching.</param>
-    /// <param name="pending">Watch List and Favorites choices for titles not on the server yet.</param>
     public StreamlineController(
         IUserManager userManager,
         ILibraryManager libraryManager,
@@ -72,10 +70,8 @@ public sealed class StreamlineController : ControllerBase
         GenreTasteService genreTaste,
         TrailerOverrides trailerOverrides,
         SeasonTrailerService seasonTrailers,
-        ContinueWatchingService continueWatching,
-        PendingChoicesService pending)
+        ContinueWatchingService continueWatching)
     {
-        _pending = pending;
         _continueWatching = continueWatching;
         _trailerOverrides = trailerOverrides;
         _seasonTrailers = seasonTrailers;
@@ -386,8 +382,8 @@ public sealed class StreamlineController : ControllerBase
     }
 
     /// <summary>
-    /// Gets the Coming Soon row: the same for everyone (cut down to what the user can see):
-    /// upcoming episodes of every show here, and requested movies and new shows on their way.
+    /// Gets the Coming Soon row: upcoming episodes of every show here, the same for everyone
+    /// (cut down to what the user can see).
     /// </summary>
     [HttpGet("ComingSoon")]
     [Authorize]
@@ -395,37 +391,6 @@ public sealed class StreamlineController : ControllerBase
     {
         var user = CurrentUser();
         return user is null ? Unauthorized() : Ok(_comingSoon.Get(user));
-    }
-
-    /// <summary>
-    /// Gets the signed-in user's Watch List and Favorites choices for titles not on the server yet.
-    /// </summary>
-    [HttpGet("Pending")]
-    [Authorize]
-    public ActionResult<IReadOnlyList<PendingChoice>> GetPending()
-    {
-        var user = CurrentUser();
-        return user is null ? Unauthorized() : Ok(_pending.Get(user.Id));
-    }
-
-    /// <summary>
-    /// Puts a title that isn't on the server yet on the signed-in user's Watch List or
-    /// Favorites (carried out when it arrives), or takes that back.
-    /// </summary>
-    /// <param name="tmdbId">"tv:1234" or "movie:5678".</param>
-    /// <param name="what">"watchlist" or "favorite".</param>
-    /// <param name="on">On or off.</param>
-    [HttpPost("Pending/{tmdbId}/{what}")]
-    [Authorize]
-    public ActionResult SetPending([FromRoute] string tmdbId, [FromRoute] string what, [FromQuery] bool on = true)
-    {
-        var user = CurrentUser();
-        if (user is null)
-        {
-            return Unauthorized();
-        }
-
-        return _pending.Set(user.Id, tmdbId, what, on) ? Ok(_pending.Get(user.Id)) : BadRequest();
     }
 
     /// <summary>
