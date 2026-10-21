@@ -3273,3 +3273,35 @@ html.sl-nav-on body > .sl-back:focus-visible {
         margin-top: 0.35em;
     }
 }
+
+/* ---- Coming Soon: + and heart on each card ------------------------------------------------ */
+
+.sl-coming-actions {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
+    z-index: 2;
+    display: flex;
+    gap: 0.35rem;
+}
+
+.sl-round.sl-round--small {
+    width: 2rem;
+    height: 2rem;
+    border-width: 1.5px;
+    background: rgba(20, 20, 20, 0.7);
+}
+
+.sl-round.sl-round--small .material-icons {
+    font-size: 1.15rem;
+}
+
+.sl-round.sl-round--small.is-on {
+    border-color: var(--sl-accent);
+}
+
+@supports not (aspect-ratio: 1 / 1) {
+    .sl-coming-actions > * + * {
+        margin-left: 0.35rem;
+    }
+}

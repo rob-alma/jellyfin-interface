@@ -1279,12 +1279,15 @@
 
     // A card for something that isn't (fully) here yet: artwork from Jellyfin when the show is
     // in the library, else from TMDb (via Seerr); the date it lands as the tag.
+    // A Coming Soon card. It opens the show's own page (never an episode: those aren't here
+    // yet), except for a brand-new show and anything not on the server, which only show their
+    // date. + and heart work for all of them: for titles not here yet they're carried out
+    // when the title arrives.
     function buildComingCard(entry) {
         const layout = COMPACT_QUERY.matches ? "poster" : "landscape";
-        // Only a show that's on the server opens (its own page); anything not here yet is just
-        // a picture with its date.
-        const card = el(entry.ItemId ? "a" : "div", `sl-card sl-card--${layout} sl-card--coming${entry.ItemId ? "" : " sl-card--static"}`);
-        if (entry.ItemId) {
+        const opens = !!(entry.Opens && entry.ItemId);
+        const card = el(opens ? "a" : "div", `sl-card sl-card--${layout} sl-card--coming${opens ? "" : " sl-card--static"}`);
+        if (opens) {
             card.href = `#/details?id=${entry.ItemId}`;
         }
         card.setAttribute("aria-label", `${entry.Title}, ${entry.Subtitle}, ${comingDateLabel(entry)}`);
@@ -1310,15 +1313,63 @@
             media.appendChild(treatment);
         }
         media.appendChild(el("span", "sl-card-badge sl-card-badge--date", comingDateLabel(entry)));
+        media.appendChild(comingActions(entry));
         card.appendChild(media);
         card.appendChild(el("div", "sl-card-caption", entry.Subtitle));
-        if (entry.ItemId) {
+        if (opens) {
             card.addEventListener("click", (event) => {
                 event.preventDefault();
-                showDetails({ Id: entry.ItemId });
+                showDetails({ Id: entry.ItemId, Type: entry.MediaType === "movie" ? "Movie" : "Series", ServerId: ApiClient.serverId() });
             });
         }
         return card;
+    }
+
+    // + and heart on a Coming Soon card: the usual ones for a title on the server, a choice kept
+    // for later for one that isn't.
+    function comingActions(entry) {
+        const actions = el("div", "sl-coming-actions");
+        if (entry.item) {
+            actions.appendChild(listButton(entry.item.Id, "sl-round sl-round--small"));
+            actions.appendChild(favoriteButton(entry.item, "sl-round sl-round--small"));
+            return actions;
+        }
+        if (!entry.TmdbId) {
+            return actions;
+        }
+        const chosen = (what) => (state.pending || []).some((choice) => choice.TmdbId === entry.TmdbId && choice[what === "watchlist" ? "Watchlist" : "Favorite"]);
+        const pendingButton = (what, onIcon, offIcon, onTitle, offTitle) => {
+            const button = el("button", "sl-round sl-round--small");
+            button.type = "button";
+            const render = () => {
+                const on = chosen(what);
+                button.replaceChildren(icon(on ? onIcon : offIcon));
+                button.classList.toggle("is-on", on);
+                button.setAttribute("aria-pressed", String(on));
+                button.title = on ? onTitle : offTitle;
+                button.setAttribute("aria-label", button.title);
+            };
+            render();
+            button.addEventListener("click", async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                try {
+                    state.pending = await ApiClient.ajax({
+                        type: "POST",
+                        url: url(`Streamline/Pending/${encodeURIComponent(entry.TmdbId)}/${what}`, { on: !chosen(what) }),
+                        dataType: "json"
+                    });
+                    render();
+                } catch (error) {
+                    console.warn("[Streamline] Could not save that choice.", error);
+                }
+                button.blur();
+            });
+            return button;
+        };
+        actions.appendChild(pendingButton("watchlist", "check", "add", "Goes on your Watch List when it arrives (undo)", "Add to your Watch List when it arrives"));
+        actions.appendChild(pendingButton("favorite", "favorite", "favorite_border", "Becomes a favorite when it arrives (undo)", "Add to your Favorites when it arrives"));
+        return actions;
     }
 
     const rowLoaders = {
@@ -1383,15 +1434,28 @@
             return [{ key: "new", title: "New on Jellyfin", items, layout: "landscape", seeAll: browseHref(scope, { sl: "new" }) }];
         },
 
+        // The same for everyone: what's about to air or come out. Movies on Movies, shows on
+        // Shows, both on Home.
         async comingSoon(scope) {
             if (!state.config.HasSeerr) {
                 return [];
             }
-            // Only episodes about to air, so nothing for the Movies page.
-            if (scope.types === "Movie") {
-                return [];
+            const types = scope.types.split(",");
+            // The Watch List is loaded too, for the + buttons.
+            const [all, pending] = await Promise.all([
+                getJson("Streamline/ComingSoon").catch(() => []),
+                getJson("Streamline/Pending").catch(() => []),
+                loadWatchlist().catch(() => [])
+            ]);
+            const entries = (all || []).filter((entry) => types.includes(entry.MediaType === "movie" ? "Movie" : "Series"));
+            // Their own state for the + and heart: the titles here, and choices for ones not here yet.
+            const ids = Array.from(new Set(entries.map((entry) => entry.ItemId).filter(Boolean)));
+            const byId = new Map();
+            for (let i = 0; i < ids.length; i += 50) {
+                (await itemsByIds(ids.slice(i, i + 50)).catch(() => [])).forEach((item) => byId.set(normalizeIds([item.Id])[0], item));
             }
-            const items = (await getJson("Streamline/ComingSoon").catch(() => [])) || [];
+            state.pending = pending || [];
+            const items = entries.map((entry) => Object.assign({}, entry, { item: entry.ItemId ? byId.get(normalizeIds([entry.ItemId])[0]) : null }));
             return [{ key: "coming", title: "Coming Soon", items, layout: "landscape", cardBuilder: buildComingCard }];
         },
 

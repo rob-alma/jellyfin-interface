@@ -21,6 +21,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<TrailerOverrides>();
         serviceCollection.AddSingleton<SeasonTrailerService>();
         serviceCollection.AddSingleton<IdentityService>();
+        serviceCollection.AddSingleton<PendingChoicesService>();
         serviceCollection.AddSingleton<ComingSoonService>();
         serviceCollection.AddSingleton<CollectionService>();
         serviceCollection.AddSingleton<ContinueWatchingService>();

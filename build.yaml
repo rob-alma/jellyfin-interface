@@ -1,7 +1,7 @@
 ---
 name: "Streamline"
 guid: "d0c3935f-a1ab-430c-95ed-388ce83b1431"
-version: "0.20.1.0"
+version: "0.21.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "A streamlined, cinematic home screen"
@@ -17,6 +17,7 @@ artifacts:
 - "Jellyfin.Plugin.Streamline.dll"
 - "Newtonsoft.Json.dll"
 changelog: >
+  0.21.0: Coming Soon is the same for everyone (not based on what you watch, your Watch List or Favorites): the next episode of every show on the server that airs within a month, plus requested movies (by their digital release) and new shows on their way, on Home, Movies and Shows. A card opens the show's own page, never an episode that isn't there yet; a brand-new show (season 1, episode 1) and titles not on the server can't be opened. Every card has + (Watch List) and a heart (Favorites); for titles not on the server yet the choice is kept and carried out when they arrive. Worked out in the background every 3 hours.
   0.20.1: Collections with both movies and shows have All / Movies / Shows buttons (with counts) on their page.
   0.20.0: New collections: Crime (every crime movie and show: thrillers, dramas, police procedurals) and Medical (hospital dramas and the like) in Featured, and a Warhammer franchise (the Warhammer TV series). Video Game Adaptations no longer includes the Pokemon films (Pokemon has its own franchise). Cartoon Network & Adult Swim and Adult Animation are one TV collection, Cartoons. Continue Watching has a Clean up button next to its title: remove what you won't finish and say why (didn't like it: rated Bad; lost interest: a little against similar titles and not recommended again; already finished: marked watched; save for later: Watch List; someone else watched it: left out of your taste). Recommended and the genre rows take the reason into account; a removed title comes back when you play it again.
   0.19.0: The Your genres bar is in the purple accent colour. The back button is a small pill under the logo, and only shows on pages you went into (a title, genre, collection, search), not on Home, Movies, Shows, Watch List, Favorites or Collections. Collections: new Anime section (All Anime, Anime Movies, Shonen, Seinen, Isekai, Action, Fantasy, Romance, Comedy, Dark and Horror, Sci-Fi and Mecha, Slice of Life, Sports, Based on Light Novels, Donghua) and a TV section (Netflix, HBO, Disney+, Prime Video, Apple TV+, Paramount+, Hulu, Showtime, FX, AMC, Starz, BBC, ITV, Channel 4, K-Dramas, Cartoon Network, Nickelodeon, Disney Channel, National Geographic, Miniseries, Reality and Cooking, Kids' Shows, Adult Animation, True Crime). A24 and Under 90 Minutes removed. Movie series no longer get merged by a shared first word unless 3 or more series share it (Top Gun was merged with Top Gear, How to Train Your Dragon with the Grinch), odd TMDb names are cleaned up (The Bourne, Tarzan (Animation)), Evil Dead is one franchise, a film that's on the server twice counts once, and directors who only made one series' films (the Pokemon or Barbie films) are left out. Customize button on the Collections page, per person: reorder or hide sections, pin collections to a Pinned section at the top, hide collections; the Home Collections row follows it. Genres: TVDB genre names count (Suspense as Thriller, Children as Family, Musical as Music, Anime as Animation), and Anime includes every show with the Anime genre.
