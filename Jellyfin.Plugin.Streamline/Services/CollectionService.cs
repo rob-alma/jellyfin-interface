@@ -73,6 +73,8 @@ public sealed class CollectionService
         "chernobyl", "watchmen", "the queen's gambit", "the white lotus", "beef", "baby reindeer", "adolescence"
     ];
 
+    private static readonly HashSet<string> MedicalTags = new(StringComparer.OrdinalIgnoreCase) { "hospital", "doctor", "nurse", "surgeon", "paramedic", "medical", "physician" };
+
     // Decades, after the classics. Movies by release year, shows by the year they started.
     private static readonly Universe[] Decades =
     [
@@ -98,6 +100,13 @@ public sealed class CollectionService
         new("pixar", "Pixar", ["pixar"], StudioContains: ["pixar"]),
         new("books", "Book Adaptations", ["book", "books", "novel", "novels", "based on a book", "boek", "boeken", "roman", "verfilming"],
             Tags: ["based on novel or book", "based on novel", "based on young adult novel", "based on book", "based on short story", "based on children's book", "based on play or musical"]),
+        new("crime", "Crime", ["crime", "misdaad", "detective", "police", "politie", "crime thriller", "crime drama"],
+            Test: item => HasGenre(item, "crime", "misdaad") || HasTag(item, "police procedural")),
+        // A clear medical keyword, or two hospital ones: "hospital" or "doctor" alone is also
+        // Scream, Doctor Strange and Totoro.
+        new("medical", "Medical", ["medical", "hospital", "doctor", "ziekenhuis", "dokter", "artsen"],
+            Test: item => HasTag(item, "medical drama", "medical resident", "medical student", "emergency room")
+                || item.Tags.Count(tag => MedicalTags.Contains(tag)) >= 2),
         new("musicals", "Musicals", ["musical", "musicals", "sing along"], Tags: ["musical", "musical film", "broadway", "jukebox musical", "song and dance"]),
         new("best-picture", "Best Picture Winners", ["oscar", "oscars", "academy award", "best picture"], TitleYears: BestPictureWinners, MoviesOnly: true),
         new("award-shows", "Award-winning Shows", ["emmy", "emmys", "award", "awards", "award winning"], Titles: EmmyWinningShows, SeriesOnly: true, ShowsOnly: true),
@@ -106,7 +115,9 @@ public sealed class CollectionService
         new("christmas", "Christmas", ["christmas", "xmas", "holiday"], Tags: ["christmas", "christmas eve", "santa claus", "christmas party", "christmas tree"]),
         new("halloween", "Halloween", ["halloween", "spooky"], Tags: ["halloween", "trick or treating"]),
         new("stephen-king", "Stephen King", ["stephen king", "king"], Tags: ["based on stephen king's work", "stephen king"], People: ["Stephen King"]),
-        new("video-games", "Video Game Adaptations", ["video game", "game"], Tags: ["based on video game", "video game adaptation"]),
+        // Pokémon has its own franchise; its films would otherwise fill this one.
+        new("video-games", "Video Game Adaptations", ["video game", "game"],
+            Test: item => HasTag(item, "based on video game", "video game adaptation") && !Normalize(item.Name).StartsWith("pokemon", StringComparison.Ordinal)),
     ];
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
@@ -153,6 +164,8 @@ public sealed class CollectionService
         new("tinker-bell", "Tinker Bell", ["tinker bell", "disney fairies"], Prefixes: ["tinker bell"]),
         new("winnie-the-pooh", "Winnie the Pooh", ["pooh", "winnie"], Prefixes: ["winnie the pooh"], Titles: ["the many adventures of winnie the pooh", "the tigger movie", "piglet's big movie", "pooh's heffalump movie", "christopher robin"]),
         new("dragon-ball", "Dragon Ball", ["dragon ball", "dbz", "goku"], Prefixes: ["dragon ball"]),
+        new("warhammer", "Warhammer", ["warhammer", "warhammer 40k", "40k", "space marines"], Tags: ["warhammer", "warhammer 40k", "warhammer 40,000"], Studios: ["Warhammer TV"],
+            Titles: ["angels of death", "angels of death (2021)", "pariah nexus", "hammer and bolter", "adepta sororitas: penitence", "kill lupercal", "interrogator"]),
         new("evil-dead", "Evil Dead", ["evil dead", "ash", "deadites"], Prefixes: ["evil dead", "the evil dead", "ash vs evil dead"], Titles: ["army of darkness"]),
     ];
 
@@ -244,14 +257,14 @@ public sealed class CollectionService
         Channel("itv", "ITV", ["itv"], "ITV", "ITV1", "ITV2", "ITVX", "ITV Encore"),
         Channel("channel-4", "Channel 4", ["channel 4", "e4"], "Channel 4", "E4", "All 4"),
         Channel("k-drama", "K-Dramas", ["k-drama", "kdrama", "korean", "korea"], "tvN", "JTBC", "KBS1", "KBS2", "MBC", "ENA", "OCN", "Coupang Play", "TVING", "Channel A", "MBN"),
-        Channel("cartoon-network", "Cartoon Network & Adult Swim", ["cartoon network", "adult swim"], "Cartoon Network", "Adult Swim", "Boomerang"),
+        TvTheme("cartoons", "Cartoons", ["cartoons", "cartoon network", "adult swim", "adult animation", "tekenfilms"],
+            item => (OnChannel(item, "Cartoon Network", "Adult Swim", "Boomerang") || HasTag(item, "adult animation")) && !IsAnime(item)),
         Channel("nickelodeon", "Nickelodeon", ["nickelodeon", "nick"], "Nickelodeon", "Nick Jr.", "Nicktoons", "Nick at Nite"),
         Channel("disney-channel", "Disney Channel", ["disney channel", "disney junior", "disney xd"], "Disney Channel", "Disney Junior", "Disney XD", "Playhouse Disney"),
         Channel("nat-geo", "National Geographic", ["national geographic", "nat geo"], "National Geographic", "Nat Geo Wild", "Nat Geo"),
         TvTheme("miniseries", "Miniseries", ["miniseries", "mini-series", "limited series"], item => HasGenre(item, "mini-series", "miniseries") || HasTag(item, "miniseries", "limited series")),
         TvTheme("reality", "Reality & Cooking", ["reality", "cooking", "game show", "competition"], item => HasGenre(item, "reality", "game show", "food", "travel") || HasTag(item, "reality", "reality tv", "cooking competition", "competition")),
         TvTheme("kids", "Kids' Shows", ["kids", "children", "kinderen", "kinder"], item => HasGenre(item, "children", "kids") && !IsAnime(item)),
-        TvTheme("adult-animation", "Adult Animation", ["adult animation", "adult cartoons"], item => HasTag(item, "adult animation")),
         TvTheme("true-crime", "True Crime", ["true crime"], item => HasGenre(item, "documentary", "documentaire") && HasTag(item, "true crime", "serial killer", "murder", "crime investigation")),
     ];
 
